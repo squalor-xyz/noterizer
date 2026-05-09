@@ -249,7 +249,23 @@ Convert long-form audio into:
 
 # Audio → Transcript
 
-Example:
+Preferred wrapper:
+
+```bash
+python run_whisperx.py input.mp3
+```
+
+Other useful variants:
+
+```bash
+python run_whisperx.py input.mp3 --type json
+python run_whisperx.py input.mp3 --type srt
+python run_whisperx.py input.mp3 --output-dir ./transcripts
+```
+
+The wrapper reads the baseline WhisperX flags from `whisper-cmd.txt` and defaults output to a `transcripts/` directory beside the audio file.
+
+Equivalent raw WhisperX command:
 
 ```bash
 whisperx input.mp3 \
