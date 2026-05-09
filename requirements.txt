@@ -1,0 +1,5 @@
+requests
+chromadb
+huggingface_hub
+whisperx
+pyannote.audio
