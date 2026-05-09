@@ -9,4 +9,7 @@ __pycache__/
 venv/
 
 transcripts/
+summaries/
+notes/
 voice_db/
+noterizer_db/

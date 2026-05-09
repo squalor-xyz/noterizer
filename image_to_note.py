@@ -1,21 +1,15 @@
-import sys
+#!/usr/bin/env python3
 import base64
-import requests
+import sys
 from pathlib import Path
 
+import requests
+
+
 OLLAMA_URL = "http://localhost:11434/api/chat"
-#MODEL = "llama3.2-vision"
 MODEL = "minicpm-v"
 
-
-def encode_image(path):
-    return base64.b64encode(Path(path).read_bytes()).decode("utf-8")
-
-
-def extract_note(image_path):
-    image_b64 = encode_image(image_path)
-
-prompt = """
+PROMPT = """
 Perform OCR extraction on this handwritten note.
 
 Rules:
@@ -29,9 +23,17 @@ Rules:
 - Preserve technical terms exactly.
 - Preserve arrows, bullets, indentation, and labels.
 - Output Markdown only.
-"""
+""".strip()
 
-    r = requests.post(
+
+def encode_image(path):
+    return base64.b64encode(Path(path).read_bytes()).decode("utf-8")
+
+
+def extract_note(image_path):
+    image_b64 = encode_image(image_path)
+
+    response = requests.post(
         OLLAMA_URL,
         json={
             "model": MODEL,
@@ -39,19 +41,19 @@ Rules:
             "messages": [
                 {
                     "role": "user",
-                    "content": prompt,
-                    "images": [image_b64]
+                    "content": PROMPT,
+                    "images": [image_b64],
                 }
             ],
             "options": {
-                "temperature": 0.0
-            }
+                "temperature": 0.0,
+            },
         },
-        timeout=600
+        timeout=600,
     )
 
-    r.raise_for_status()
-    return r.json()["message"]["content"].strip()
+    response.raise_for_status()
+    return response.json()["message"]["content"].strip()
 
 
 def main():
