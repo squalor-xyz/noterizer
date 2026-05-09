@@ -8,18 +8,42 @@ from pathlib import Path
 import requests
 
 from run_whisperx import build_command
-from summarize_transcript import ask_ollama, build_prompt, load_transcript
+from summarize_transcript import build_prompt, load_transcript
 
 
-EMBED_URL = "http://localhost:11434/api/embeddings"
-CHAT_URL = "http://localhost:11434/api/generate"
-VISION_URL = "http://localhost:11434/api/chat"
+DEFAULT_PROFILE = {
+    "services": {
+        "ollama_generate_url": "http://localhost:11434/api/generate",
+        "ollama_embeddings_url": "http://localhost:11434/api/embeddings",
+        "ollama_chat_url": "http://localhost:11434/api/chat",
+    },
+    "database": {
+        "path": "./noterizer_db",
+        "collection": "memory",
+    },
+    "models": {
+        "summary": "qwen2.5:14b",
+        "query": "qwen2.5:14b",
+        "embedding": "nomic-embed-text",
+        "vision": "minicpm-v",
+    },
+    "audio": {
+        "transcripts_dirname": "transcripts",
+        "summaries_dirname": "summaries",
+        "transcript_output": "json",
+        "index": "both",
+    },
+    "image": {
+        "notes_dirname": "notes",
+        "index": True,
+    },
+    "query": {
+        "type": "any",
+        "results": 10,
+    },
+}
 
-DB_PATH = "./noterizer_db"
-COLLECTION = "memory"
-EMBED_MODEL = "nomic-embed-text"
-QUERY_MODEL = "qwen2.5:14b"
-VISION_MODEL = "minicpm-v"
+PROFILES_DIR = Path(__file__).with_name("profiles")
 
 IMAGE_PROMPT = """
 Perform OCR extraction on this handwritten note.
@@ -50,6 +74,11 @@ def parse_args():
     )
     audio_parser.add_argument("audio_file", help="Path to the audio file.")
     audio_parser.add_argument(
+        "--profile",
+        default="default",
+        help="Profile name from profiles/ or path to a profile JSON file.",
+    )
+    audio_parser.add_argument(
         "--transcripts-dir",
         help="Directory for WhisperX outputs. Defaults to <audio dir>/transcripts.",
     )
@@ -60,18 +89,17 @@ def parse_args():
     audio_parser.add_argument(
         "--transcript-output",
         choices=["json", "all"],
-        default="json",
+        default=None,
         help="WhisperX output format. Use 'all' only if you also want extra transcript formats.",
     )
     audio_parser.add_argument(
         "--index",
         choices=["none", "transcript", "summary", "both"],
-        default="both",
+        default=None,
         help="What to index into the shared database after processing.",
     )
     audio_parser.add_argument(
         "--db-path",
-        default=DB_PATH,
         help="Path to the shared Chroma database.",
     )
 
@@ -80,6 +108,11 @@ def parse_args():
         help="OCR an image into markdown and optionally index it.",
     )
     image_parser.add_argument("image_file", help="Path to the image file.")
+    image_parser.add_argument(
+        "--profile",
+        default="default",
+        help="Profile name from profiles/ or path to a profile JSON file.",
+    )
     image_parser.add_argument(
         "--notes-dir",
         help="Directory for OCR markdown notes. Defaults to <image dir>/notes.",
@@ -91,7 +124,6 @@ def parse_args():
     )
     image_parser.add_argument(
         "--db-path",
-        default=DB_PATH,
         help="Path to the shared Chroma database.",
     )
 
@@ -101,24 +133,61 @@ def parse_args():
     )
     query_parser.add_argument("question", help="Question to ask over indexed data.")
     query_parser.add_argument(
+        "--profile",
+        default="default",
+        help="Profile name from profiles/ or path to a profile JSON file.",
+    )
+    query_parser.add_argument(
         "--type",
         choices=["any", "transcript", "summary", "image_note"],
-        default="any",
+        default=None,
         help="Restrict retrieval to one content type.",
     )
     query_parser.add_argument(
         "--results",
         type=int,
-        default=10,
+        default=None,
         help="Number of retrieved chunks to use as context.",
     )
     query_parser.add_argument(
         "--db-path",
-        default=DB_PATH,
         help="Path to the shared Chroma database.",
     )
 
     return parser.parse_args()
+
+
+def merge_dicts(base, override):
+    merged = dict(base)
+
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+
+    return merged
+
+
+def resolve_profile_path(profile_value):
+    candidate = Path(profile_value).expanduser()
+
+    if candidate.suffix == ".json" or candidate.exists():
+        return candidate.resolve()
+
+    return (PROFILES_DIR / f"{profile_value}.json").resolve()
+
+
+def load_profile(profile_value):
+    profile_path = resolve_profile_path(profile_value)
+
+    if not profile_path.exists():
+        raise FileNotFoundError(f"Profile not found: {profile_path}")
+
+    profile_data = json.loads(profile_path.read_text())
+    profile = merge_dicts(DEFAULT_PROFILE, profile_data)
+    profile["_profile_path"] = str(profile_path)
+    return profile
 
 
 def ensure_exists(path, label):
@@ -157,7 +226,17 @@ def run_command(command):
         raise RuntimeError(f"Command failed with exit code {result.returncode}")
 
 
-def write_summary(transcript_path, output_path):
+def generate_text(prompt, model, url):
+    response = requests.post(
+        url,
+        json={"model": model, "prompt": prompt, "stream": False},
+        timeout=600,
+    )
+    response.raise_for_status()
+    return response.json()["response"].strip()
+
+
+def write_summary(transcript_path, output_path, profile):
     print("[summary] Loading transcript...", flush=True)
     transcript = load_transcript(transcript_path)
 
@@ -165,7 +244,12 @@ def write_summary(transcript_path, output_path):
         raise ValueError("Transcript contains no usable text.")
 
     prompt = build_prompt(transcript)
-    summary = ask_ollama(prompt)
+    print("[summary] Generating summary...", flush=True)
+    summary = generate_text(
+        prompt,
+        profile["models"]["summary"],
+        profile["services"]["ollama_generate_url"],
+    )
     output_path.write_text(summary + "\n")
 
     print(f"[summary] Wrote {output_path}", flush=True)
@@ -177,11 +261,11 @@ def encode_image(image_path):
     return base64.b64encode(image_path.read_bytes()).decode("utf-8")
 
 
-def extract_note(image_path):
+def extract_note(image_path, profile):
     response = requests.post(
-        VISION_URL,
+        profile["services"]["ollama_chat_url"],
         json={
-            "model": VISION_MODEL,
+            "model": profile["models"]["vision"],
             "stream": False,
             "messages": [
                 {
@@ -201,26 +285,20 @@ def extract_note(image_path):
 
 
 def embed(text):
+    raise RuntimeError("embed() requires a profile-aware call path.")
+
+
+def embed_text(text, profile):
     response = requests.post(
-        EMBED_URL,
-        json={"model": EMBED_MODEL, "prompt": text},
+        profile["services"]["ollama_embeddings_url"],
+        json={"model": profile["models"]["embedding"], "prompt": text},
         timeout=600,
     )
     response.raise_for_status()
     return response.json()["embedding"]
 
 
-def ask_llm(prompt):
-    response = requests.post(
-        CHAT_URL,
-        json={"model": QUERY_MODEL, "prompt": prompt, "stream": False},
-        timeout=600,
-    )
-    response.raise_for_status()
-    return response.json()["response"].strip()
-
-
-def get_collection(db_path):
+def get_collection(db_path, collection_name):
     try:
         import chromadb
     except ModuleNotFoundError as exc:
@@ -229,7 +307,7 @@ def get_collection(db_path):
         ) from exc
 
     client = chromadb.PersistentClient(path=str(db_path))
-    return client.get_or_create_collection(COLLECTION)
+    return client.get_or_create_collection(collection_name)
 
 
 def stable_id(source_path, content_type, key):
@@ -276,7 +354,7 @@ def chunk_markdown_sections(text):
     return sections
 
 
-def index_transcript_file(collection, transcript_path):
+def index_transcript_file(collection, transcript_path, profile):
     data = json.loads(transcript_path.read_text())
     source_path = str(transcript_path.resolve())
     clear_existing_docs(collection, source_path, "transcript")
@@ -312,13 +390,13 @@ def index_transcript_file(collection, transcript_path):
         print(f"[index] No transcript segments found in {transcript_path}", flush=True)
         return 0
 
-    embeddings = [embed(doc) for doc in documents]
+    embeddings = [embed_text(doc, profile) for doc in documents]
     collection.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
     print(f"[index] Indexed {len(documents)} transcript chunks from {transcript_path.name}", flush=True)
     return len(documents)
 
 
-def index_markdown_file(collection, markdown_path, content_type):
+def index_markdown_file(collection, markdown_path, content_type, profile):
     text = markdown_path.read_text().strip()
     source_path = str(markdown_path.resolve())
     clear_existing_docs(collection, source_path, content_type)
@@ -345,7 +423,7 @@ def index_markdown_file(collection, markdown_path, content_type):
             }
         )
 
-    embeddings = [embed(doc) for doc in documents]
+    embeddings = [embed_text(doc, profile) for doc in documents]
     collection.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
     print(f"[index] Indexed {len(documents)} {content_type} chunks from {markdown_path.name}", flush=True)
     return len(documents)
@@ -367,13 +445,25 @@ def format_context_item(doc, meta):
     return f"{label}\n{doc}"
 
 
-def query_collection(args):
-    collection = get_collection(Path(args.db_path).resolve())
-    where = None if args.type == "any" else {"content_type": args.type}
+def resolve_db_path(args, profile):
+    if args.db_path:
+        return Path(args.db_path).expanduser().resolve()
+
+    return Path(profile["database"]["path"]).expanduser().resolve()
+
+
+def query_collection(args, profile):
+    collection = get_collection(
+        resolve_db_path(args, profile),
+        profile["database"]["collection"],
+    )
+    query_type = args.type or profile["query"]["type"]
+    where = None if query_type == "any" else {"content_type": query_type}
+    result_count = args.results or profile["query"]["results"]
 
     results = collection.query(
-        query_embeddings=[embed(args.question)],
-        n_results=args.results,
+        query_embeddings=[embed_text(args.question, profile)],
+        n_results=result_count,
         where=where,
     )
 
@@ -401,83 +491,96 @@ Indexed excerpts:
 {context}
 """.strip()
 
-    print(ask_llm(prompt))
+    print(generate_text(
+        prompt,
+        profile["models"]["query"],
+        profile["services"]["ollama_generate_url"],
+    ))
     return 0
 
 
-def run_audio_pipeline(args):
+def run_audio_pipeline(args, profile):
     audio_path = Path(args.audio_file).expanduser().resolve()
     ensure_exists(audio_path, "Audio file")
 
+    transcript_output = args.transcript_output or profile["audio"]["transcript_output"]
+    index_mode = args.index or profile["audio"]["index"]
     transcripts_dir = ensure_dir(
         Path(args.transcripts_dir).expanduser().resolve()
         if args.transcripts_dir
-        else default_child_dir(audio_path, "transcripts")
+        else default_child_dir(audio_path, profile["audio"]["transcripts_dirname"])
     )
     summaries_dir = ensure_dir(
         Path(args.summaries_dir).expanduser().resolve()
         if args.summaries_dir
-        else default_child_dir(audio_path, "summaries")
+        else default_child_dir(audio_path, profile["audio"]["summaries_dirname"])
     )
 
-    command = build_command(audio_path, transcripts_dir, args.transcript_output)
+    command = build_command(audio_path, transcripts_dir, transcript_output)
     run_command(command)
 
     transcript_path = transcript_json_path(audio_path, transcripts_dir)
     ensure_exists(transcript_path, "Transcript JSON")
 
     summary_path = summary_markdown_path(audio_path, summaries_dir)
-    write_summary(transcript_path, summary_path)
+    write_summary(transcript_path, summary_path, profile)
 
-    if args.index == "none":
+    if index_mode == "none":
         return 0
 
-    collection = get_collection(Path(args.db_path).resolve())
+    collection = get_collection(
+        resolve_db_path(args, profile),
+        profile["database"]["collection"],
+    )
 
-    if args.index in {"transcript", "both"}:
-        index_transcript_file(collection, transcript_path)
+    if index_mode in {"transcript", "both"}:
+        index_transcript_file(collection, transcript_path, profile)
 
-    if args.index in {"summary", "both"}:
-        index_markdown_file(collection, summary_path, "summary")
+    if index_mode in {"summary", "both"}:
+        index_markdown_file(collection, summary_path, "summary", profile)
 
     return 0
 
 
-def run_image_pipeline(args):
+def run_image_pipeline(args, profile):
     image_path = Path(args.image_file).expanduser().resolve()
     ensure_exists(image_path, "Image file")
 
     notes_dir = ensure_dir(
         Path(args.notes_dir).expanduser().resolve()
         if args.notes_dir
-        else default_child_dir(image_path, "notes")
+        else default_child_dir(image_path, profile["image"]["notes_dirname"])
     )
 
     print(f"[image] Processing {image_path}", flush=True)
-    note = extract_note(image_path)
+    note = extract_note(image_path, profile)
 
     note_path = note_markdown_path(image_path, notes_dir)
     note_path.write_text(note + "\n")
     print(f"[image] Wrote {note_path}", flush=True)
 
-    if args.no_index:
+    if args.no_index or not profile["image"]["index"]:
         return 0
 
-    collection = get_collection(Path(args.db_path).resolve())
-    index_markdown_file(collection, note_path, "image_note")
+    collection = get_collection(
+        resolve_db_path(args, profile),
+        profile["database"]["collection"],
+    )
+    index_markdown_file(collection, note_path, "image_note", profile)
     return 0
 
 
 def main():
     args = parse_args()
+    profile = load_profile(args.profile)
 
     try:
         if args.command == "audio":
-            return run_audio_pipeline(args)
+            return run_audio_pipeline(args, profile)
         if args.command == "image":
-            return run_image_pipeline(args)
+            return run_image_pipeline(args, profile)
         if args.command == "query":
-            return query_collection(args)
+            return query_collection(args, profile)
     except (FileNotFoundError, RuntimeError, ValueError, requests.RequestException) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

@@ -11,6 +11,8 @@ Local-first pipeline for:
 
 The main entrypoint is [`noterizer.py`](./noterizer.py).
 
+License: MPL 2.0. See [LICENSE](./LICENSE).
+
 ## What It Does
 
 Audio flow:
@@ -39,6 +41,12 @@ question
 ```
 
 ## Quick Start
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
 
 Audio:
 
@@ -101,7 +109,7 @@ noterizer/
 
 ## Existing Scripts
 
-The older scripts are still kept:
+Legacy step-by-step scripts are still kept:
 
 - `run_whisperx.py`
 - `summarize_transcript.py`
@@ -109,7 +117,7 @@ The older scripts are still kept:
 - `ask_memory.py`
 - `image_to_note.py`
 
-Use them if you want one step at a time. Use `noterizer.py` for the end-to-end workflow.
+Use them if you want one step at a time or need to inspect a single stage. For normal use, `noterizer.py` is the supported primary interface.
 
 ## Documentation
 

@@ -106,7 +106,7 @@ Why:
 - one query surface across transcript, summary, and OCR note data
 - metadata still allows filtering by content type
 
-The main tradeoff is that old standalone scripts such as `ask_memory.py` still use their earlier database assumptions. Use `noterizer.py query` for the new combined flow.
+The main tradeoff is that legacy standalone scripts such as `ask_memory.py` still use their earlier database assumptions. Use `noterizer.py query` for the supported combined flow.
 
 ## Output Layout
 
@@ -127,7 +127,7 @@ project/
 └── noterizer_db/
 ```
 
-## Older One-Off Scripts
+## Legacy One-Off Scripts
 
 If you want manual control over individual steps:
 
@@ -139,4 +139,4 @@ python3 index_transcript.py transcripts/input.json
 python3 ask_memory.py "What did we discuss?"
 ```
 
-Those are preserved, but `noterizer.py` is now the preferred workflow.
+Those are preserved for manual or incremental use, but `noterizer.py` is now the supported workflow.

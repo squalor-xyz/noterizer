@@ -12,6 +12,12 @@ source .venv/bin/activate
 Install Python dependencies:
 
 ```bash
+pip install -r requirements.txt
+```
+
+Equivalent manual install:
+
+```bash
 pip install -U \
   whisperx \
   pyannote.audio \
