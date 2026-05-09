@@ -1,0 +1,9 @@
+whisperx input.mp3 \
+  --model large-v3 \
+  --language en \
+  --diarize \
+  --hf_token $HF_TOKEN \
+  --batch_size 2 \
+  --compute_type int8 \
+  --output_format json \
+  --output_dir transcripts

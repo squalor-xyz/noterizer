@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.AppleDouble
+.LSOverride
+
+.env
+.venv/
+venv/
+
+transcripts/
+voice_db/
