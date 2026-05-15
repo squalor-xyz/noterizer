@@ -7,7 +7,7 @@ from pathlib import Path
 import requests
 
 from run_whisperx import build_command
-from summarize_transcript import build_prompt, load_transcript
+from summarize_transcript import build_prompt, generate_summary_markdown, load_transcript
 
 from noterizer_core import (
     available_profiles,
@@ -123,7 +123,7 @@ def write_summary(transcript_path, output_path, profile):
 
     prompt = build_prompt(transcript)
     print("[summary] Generating summary...", flush=True)
-    summary = generate_text(prompt, profile["summary_backend"])
+    summary = generate_summary_markdown(transcript, profile["summary_backend"])
     output_path.write_text(summary + "\n")
     print(f"[summary] Wrote {output_path}", flush=True)
 
