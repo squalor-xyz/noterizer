@@ -145,6 +145,27 @@ SUSPECT_MM_WAVE_RE = re.compile(r"\b\d+\s*mm\s+wave\b", re.IGNORECASE)
 MIXED_TOKEN_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*\d[A-Za-z0-9_]*\b")
 PAREN_TERM_RE = re.compile(r"\b([A-Z0-9][A-Z0-9_-]{1,})\s+\(([^)]+)\)")
 SUSPICIOUS_EXPANSION_WORDS = {"somber"}
+SOFT_DECISION_RE = re.compile(
+    r"\b(suggest(?:ed)?|proposal|propose|possible|maybe|might|could|should|consider|considering|"
+    r"explore|exploring|evaluate|evaluating|future work|planned|plan to|idea)\b",
+    re.IGNORECASE,
+)
+HARD_DECISION_RE = re.compile(
+    r"\b(decided|decision|agreed|agreement|the plan is|going with)\b",
+    re.IGNORECASE,
+)
+SOFT_ACTION_RE = re.compile(
+    r"\b(explore|investigate|evaluate|consider|discuss|review|look into|possible|maybe|might|could)\b",
+    re.IGNORECASE,
+)
+OWNER_ACTION_RE = re.compile(
+    r"^\s*-\s*(SPEAKER_\d+|[A-Z][a-z]+(?:,\s*[A-Z][a-z]+)*)(?:\s+will\b|\s+to\b|:)"
+)
+HARD_ACTION_RE = re.compile(
+    r"\b(i(?:'m| am)? going to|i owe you|we need to|we will|let'?s|can you|"
+    r"will work on|will review|will walk through|create an issue|formal request)\b",
+    re.IGNORECASE,
+)
 
 
 def normalize_text(value):
@@ -434,6 +455,55 @@ def sanitize_summary_output(summary, template_name, transcript_lines):
             retained_lines = [line for line in lines if line.strip() != "- None stated."]
             sanitized_sections[index] = (heading, dedupe_preserve_order(retained_lines + ambiguity_notes))
             break
+
+    return render_summary_sections(sanitized_sections)
+
+
+def is_explicit_decision_line(line):
+    text = line.strip()
+    if text == "- None stated.":
+        return True
+    if SOFT_DECISION_RE.search(text) and not HARD_DECISION_RE.search(text):
+        return False
+    return bool(HARD_DECISION_RE.search(text))
+
+
+def is_explicit_action_line(line):
+    text = line.strip()
+    if text == "- None stated.":
+        return True
+    if OWNER_ACTION_RE.search(text):
+        return True
+    if HARD_ACTION_RE.search(text):
+        return True
+    return False
+
+
+def sanitize_commitment_sections(summary, template_name):
+    sections = parse_summary_sections(summary)
+    if not sections:
+        return summary
+
+    sanitized_sections = []
+
+    for heading, lines in sections:
+        cleaned_lines = list(lines)
+
+        if heading == "# Decisions Made":
+            kept = [
+                line for line in cleaned_lines
+                if line.strip().startswith("-") and is_explicit_decision_line(line)
+            ]
+            cleaned_lines = kept or ["- None stated."]
+
+        if heading == "# Action Items":
+            kept = [
+                line for line in cleaned_lines
+                if line.strip().startswith("-") and is_explicit_action_line(line)
+            ]
+            cleaned_lines = kept or ["- None stated."]
+
+        sanitized_sections.append((heading, cleaned_lines))
 
     return render_summary_sections(sanitized_sections)
 
@@ -875,12 +945,16 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
     errors = validate_summary(summary, template_name)
     if not errors:
         logger.info("Completed summary generation in %.2fs", perf_counter() - started)
-        return sanitize_summary_output(summary, template_name, transcript_lines), template_name, detected
+        final_summary = sanitize_summary_output(summary, template_name, transcript_lines)
+        final_summary = sanitize_commitment_sections(final_summary, template_name)
+        return final_summary, template_name, detected
 
     repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
     if not repaired_errors:
         logger.info("Completed summary generation in %.2fs after repair", perf_counter() - started)
-        return sanitize_summary_output(repaired_summary, template_name, transcript_lines), template_name, detected
+        final_summary = sanitize_summary_output(repaired_summary, template_name, transcript_lines)
+        final_summary = sanitize_commitment_sections(final_summary, template_name)
+        return final_summary, template_name, detected
 
     if chunk_notes is None:
         print("[summary] Falling back to chunked summarization...", flush=True)
@@ -888,7 +962,9 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
         errors = validate_summary(summary, template_name)
         if not errors:
             logger.info("Completed summary generation in %.2fs after chunk fallback", perf_counter() - started)
-            return sanitize_summary_output(summary, template_name, transcript_lines), template_name, detected
+            final_summary = sanitize_summary_output(summary, template_name, transcript_lines)
+            final_summary = sanitize_commitment_sections(final_summary, template_name)
+            return final_summary, template_name, detected
 
         repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
         if not repaired_errors:
@@ -896,7 +972,9 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
                 "Completed summary generation in %.2fs after chunk fallback repair",
                 perf_counter() - started,
             )
-            return sanitize_summary_output(repaired_summary, template_name, transcript_lines), template_name, detected
+            final_summary = sanitize_summary_output(repaired_summary, template_name, transcript_lines)
+            final_summary = sanitize_commitment_sections(final_summary, template_name)
+            return final_summary, template_name, detected
 
     print("[summary] Rebuilding final summary from chunk notes...", flush=True)
     recovery_started = perf_counter()
@@ -912,7 +990,9 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
         raise ValueError(f"Summary validation failed after recovery: {joined_errors}")
 
     logger.info("Completed summary generation in %.2fs after recovery", perf_counter() - started)
-    return sanitize_summary_output(recovered_summary, template_name, transcript_lines), template_name, detected
+    final_summary = sanitize_summary_output(recovered_summary, template_name, transcript_lines)
+    final_summary = sanitize_commitment_sections(final_summary, template_name)
+    return final_summary, template_name, detected
 
 
 def parse_args():
