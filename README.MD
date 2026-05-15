@@ -57,6 +57,7 @@ python3 noterizer.py audio /path/to/input.mp3
 
 By default, the main audio pipeline keeps both transcript JSON and SRT outputs.
 It also defaults to `summary.format: auto`, which tries to pick a meeting-style or presentation-style summary template based on the transcript.
+During summarization, the CLI prints which transcript source and summary format were used.
 
 Image OCR:
 
@@ -173,3 +174,8 @@ They share the same profile model and database defaults as `noterizer.py`. Use t
 - Setup: [docs/setup.md](./docs/setup.md)
 - Usage: [docs/usage.md](./docs/usage.md)
 - Profiles: [docs/profiles.md](./docs/profiles.md)
+
+## Logging
+
+Pipeline scripts write errors to a shared rotating log at `./noterizer.log`.
+Use `--log-level INFO` when you want more detail in that file.

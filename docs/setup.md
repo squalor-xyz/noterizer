@@ -106,7 +106,9 @@ Then either log in locally:
 huggingface-cli login
 ```
 
-Or export a token:
+That is the preferred path. The current scripts rely on your Hugging Face CLI login and do not pass `--hf_token` on the generated WhisperX command line.
+
+If you need a shell environment variable for manual testing, you can still export one:
 
 ```bash
 export HF_TOKEN=hf_xxxxxxxxx
@@ -129,7 +131,6 @@ whisperx input.mp3 \
   --model large-v3 \
   --language en \
   --diarize \
-  --hf_token $HF_TOKEN \
   --batch_size 2 \
   --compute_type int8 \
   --output_format json \
@@ -137,11 +138,24 @@ whisperx input.mp3 \
 ```
 
 `run_whisperx.py` and `noterizer.py` both use that file, but they override `--output_format` at runtime.
+They also omit `--hf_token` from the generated command and rely on your existing Hugging Face login.
 
 Current script behavior:
 
 - `python3 noterizer.py audio ...` defaults to transcript JSON + SRT
 - `python3 run_whisperx.py ...` defaults to `--type all`
+- `python3 noterizer.py audio ...` defaults to `summary.format: auto`
+
+During summarization, the CLI now prints which transcript source was used:
+
+- JSON transcript
+- sibling SRT transcript, when it looks intentionally trimmed/cleaner
+
+It also prints which summary format was chosen:
+
+- `meeting`
+- `presentation`
+- `auto-detected` when `summary.format` is `auto`
 
 ## 7. Recommended Hardware
 
@@ -179,4 +193,25 @@ python3 noterizer.py audio --help
 python3 noterizer.py image --help
 python3 noterizer.py query --help
 python3 noterizer.py profiles
+```
+
+## 9. Logging
+
+Pipeline scripts write to one shared rotating log file:
+
+```text
+./noterizer.log
+```
+
+Default behavior:
+
+- CLI output stays visible in the terminal
+- the log file records `ERROR` and above
+- old logs rotate to `noterizer.log.1` and `noterizer.log.2`
+
+Increase log detail when debugging:
+
+```bash
+python3 noterizer.py --log-level INFO audio input.mp3
+python3 summarize_transcript.py --log-level INFO transcripts/input.json
 ```

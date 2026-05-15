@@ -31,6 +31,11 @@ python3 noterizer.py audio /path/to/input.mp3 --summary-format meeting
 python3 noterizer.py audio /path/to/input.mp3 --summary-format presentation
 ```
 
+During summarization, the CLI prints both:
+
+- which transcript source was used for summarization (`json` or sibling `srt`)
+- which summary format was used (`meeting` or `presentation`, including auto-detected cases)
+
 Custom output directories:
 
 ```bash
