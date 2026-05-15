@@ -2,6 +2,23 @@
 
 ## 1. Python Environment
 
+This repo assumes you are running commands from the repo root:
+
+```bash
+cd /path/to/noterizer
+```
+
+If you are brand new to this stack, the shortest path is:
+
+1. Create and activate a Python virtual environment
+2. Install Python dependencies
+3. Install and start Ollama
+4. Pull the Ollama models used by the default profile
+5. Log in to Hugging Face for WhisperX diarization
+6. Run one small audio file end to end
+
+You do not need to understand every component before the first run.
+
 Recommended:
 
 ```bash
@@ -26,6 +43,13 @@ pip install -U \
   requests
 ```
 
+System tools you will usually need:
+
+- `ffmpeg` for audio handling
+- NVIDIA CUDA drivers if you want GPU WhisperX
+
+If `ffmpeg` is missing, install it with your OS package manager before continuing.
+
 ## 2. Choose a Backend Style
 
 This repo can work with:
@@ -35,6 +59,8 @@ This repo can work with:
 - hosted OpenAI-compatible APIs
 
 See [profiles.md](./profiles.md) for profile details.
+
+If you do not want to make backend decisions yet, use the bundled `default` profile first.
 
 ## 3. Install Ollama
 
@@ -48,6 +74,12 @@ Verify:
 
 ```bash
 ollama --version
+```
+
+Start Ollama if it is not already running:
+
+```bash
+ollama serve
 ```
 
 ## 4. Pull Models
@@ -82,6 +114,12 @@ ollama pull llama3.2-vision
 ```
 
 If you are using an OpenAI-compatible local server or hosted API instead, configure the relevant profile and ensure those models are available on that backend.
+
+For a first successful run, you only need the default-profile models:
+
+- `qwen2.5:14b`
+- `nomic-embed-text`
+- `minicpm-v`
 
 ## 5. Hugging Face Setup for Diarization
 
@@ -120,6 +158,8 @@ If you use shell startup files, reload them:
 source ~/.bashrc
 ```
 
+If diarization fails later with a pyannote access or authentication error, this is the first section to revisit.
+
 ## 6. WhisperX Command Baseline
 
 This repo keeps the baseline WhisperX flags in [`whisper-cmd.txt`](../whisper-cmd.txt).
@@ -157,7 +197,86 @@ It also prints which summary format was chosen:
 - `presentation`
 - `auto-detected` when `summary.format` is `auto`
 
-## 7. Recommended Hardware
+## 7. First Successful Run
+
+Use one small audio file first, not a large batch.
+
+Example:
+
+```bash
+python3 noterizer.py audio /path/to/example.mp3
+```
+
+What the default audio pipeline does:
+
+- transcribes the audio with WhisperX
+- writes `transcripts/example.json`
+- writes `transcripts/example.srt`
+- generates `summaries/example.summary.md`
+- indexes transcript and summary content into `./noterizer_db`
+
+What you should expect to see in the terminal:
+
+- WhisperX command execution
+- a line showing which transcript source is being summarized
+- a line showing which summary format is being used
+- a final summary write message
+- indexing messages
+
+Typical success artifacts beside your source file:
+
+```text
+audio-dir/
+├── example.mp3
+├── transcripts/
+│   ├── example.json
+│   └── example.srt
+└── summaries/
+    └── example.summary.md
+```
+
+If that works, then test retrieval:
+
+```bash
+python3 noterizer.py query "What was discussed?"
+```
+
+## 8. Minimal Verification Checklist
+
+Use these checks in order if you are unsure what is broken.
+
+Python environment:
+
+```bash
+python3 --version
+python3 noterizer.py --help
+```
+
+Ollama:
+
+```bash
+ollama ps
+```
+
+WhisperX-only step:
+
+```bash
+python3 run_whisperx.py /path/to/example.mp3 --type both
+```
+
+Summary-only step:
+
+```bash
+python3 summarize_transcript.py /path/to/transcripts/example.json
+```
+
+Query path:
+
+```bash
+python3 noterizer.py query "What happened?"
+```
+
+## 9. Recommended Hardware
 
 Minimum:
 
@@ -177,7 +296,7 @@ Ideal:
 - large local SSD
 - fast CPU
 
-## 8. Verify Local Services
+## 10. Verify Local Services
 
 Ollama should be running before summarization, OCR, indexing, or query:
 
@@ -195,7 +314,7 @@ python3 noterizer.py query --help
 python3 noterizer.py profiles
 ```
 
-## 9. Logging
+## 11. Logging
 
 Pipeline scripts write to one shared rotating log file:
 
@@ -214,4 +333,98 @@ Increase log detail when debugging:
 ```bash
 python3 noterizer.py --log-level INFO audio input.mp3
 python3 summarize_transcript.py --log-level INFO transcripts/input.json
+```
+
+## 12. Common Failures
+
+### Hugging Face / pyannote access errors
+
+Symptoms:
+
+- WhisperX fails during diarization
+- errors mention `pyannote`, authentication, gated models, or missing access
+
+Check:
+
+- you ran `huggingface-cli login`
+- you accepted the required pyannote model licenses
+
+### GPU out-of-memory during WhisperX
+
+Symptoms:
+
+- `RuntimeError: CUDA failed with error out of memory`
+
+Common causes:
+
+- Ollama is already using most of the GPU
+- the WhisperX model is too large for available VRAM
+
+Check GPU usage:
+
+```bash
+nvidia-smi
+ollama ps
+```
+
+If Ollama is holding VRAM, stop or unload it before transcription.
+
+### Ollama is slow or keeps reloading
+
+Symptoms:
+
+- summarization works but is slow between chunk steps
+
+Likely reason:
+
+- the model is being loaded, unloaded, and reloaded between requests
+
+This is slower but safer for limited VRAM systems.
+
+### Summary generation fails validation
+
+Symptoms:
+
+- errors mention missing required headings or failed recovery
+
+What it usually means:
+
+- the model returned malformed output
+- the transcript is noisy, overlong, or badly transcribed
+
+Things to try:
+
+- rerun summary only:
+
+```bash
+python3 noterizer.py audio /path/to/example.mp3 --overwrite summary
+```
+
+- force a presentation template for keynote/demo material:
+
+```bash
+python3 noterizer.py audio /path/to/example.mp3 --summary-format presentation --overwrite summary
+```
+
+- trim the source recording or the `.srt` if the tail contains noise
+
+### Transcript seems noisy after the real content ended
+
+Symptoms:
+
+- summary contains nonsense from background chatter after the meeting or talk ended
+
+What helps:
+
+- trim the audio earlier before transcription, or
+- keep a trimmed sibling `.srt`; the summarizer can prefer it when it is meaningfully shorter than the `.json`
+
+### Nothing shows up in the log
+
+Default behavior writes only `ERROR` and above to `./noterizer.log`.
+
+If you want more detail:
+
+```bash
+python3 noterizer.py --log-level INFO audio /path/to/example.mp3
 ```
