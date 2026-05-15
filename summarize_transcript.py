@@ -12,6 +12,8 @@ from noterizer_core import generate_text, load_profile
 DOMAIN_GLOSSARY = """
 Known terminology:
 - FEM = Front End Module, a hardware/product term. Do not treat FEM as a company unless the transcript explicitly says it is a company.
+- PVT may refer to R&S PVT360A equipment or to the test term "Power VS Time". Do not choose between these meanings unless the transcript context makes it clear.
+- RVTM = Requirements Verification and Traceability Matrix.
 """.strip()
 
 REQUIRED_HEADINGS = [
@@ -145,6 +147,7 @@ Content rules:
 - Do not upgrade suggestions, proposals, or ideas into decisions or commitments.
 - Do not invent action items or next steps that were not explicitly assigned, requested, or agreed.
 - Never mention chunk numbers, chunk boundaries, or intermediate processing in the final output.
+- In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not include tool names, product names, or inferred identities.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
@@ -166,7 +169,7 @@ Section requirements:
 - `# Decisions Made`: explicit decisions only. Do not include proposals, open ideas, or "should" statements.
 - `# Open Questions`: unresolved questions only.
 - `# Ambiguous / Unverified Terms`: unclear terms, possible transcription errors, unexpanded acronyms.
-- `# People Mentioned`: names or speaker references only if useful.
+- `# People Mentioned`: names or speaker references only if useful. Do not infer real identities from speaker labels.
 - `# Chronological Timeline`: short timeline bullets with timestamps when useful.
 - `# Important Quotes`: only unusually precise or important statements.
 - `# Next Steps`: explicit next steps only. Do not infer likely next steps from discussion context.
@@ -196,6 +199,7 @@ Output rules:
 - For `# Action Items`, include only explicit tasks, requests, or follow-ups from this chunk.
 - For `# Decisions Made`, include only explicit decisions from this chunk.
 - For `# Next Steps`, include only explicit next steps from this chunk.
+- For `# People Mentioned`, include only actual people explicitly named or speaker labels from this chunk.
 - Do not mention chunk numbers or chunk boundaries inside the section content.
 
 Domain glossary:
@@ -230,6 +234,8 @@ Output rules:
 - For `# Decisions Made`, keep only explicit decisions. Drop proposals, ideas, or suggestions.
 - For `# Action Items`, keep only explicit tasks, requests, or follow-ups.
 - For `# Next Steps`, keep only explicit next steps. Do not infer likely future work.
+- For `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities from speaker labels and do not include tools or products.
+- For `# Ambiguous / Unverified Terms`, prefer raw transcript terms over guessed expansions unless the Domain glossary explicitly defines them.
 - When uncertain whether something is a decision or action item, omit it or place it under `# Open Questions` or `# Main Topics Discussed`.
 
 Domain glossary:
@@ -288,6 +294,8 @@ Use bullets in every section.
 Remove any references to chunk numbers, chunk boundaries, or intermediate processing.
 Do not convert proposals or suggestions into decisions.
 Do not convert implications into action items or next steps.
+In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities and do not include tools or products.
+In `# Ambiguous / Unverified Terms`, keep raw terms unless the Domain glossary explicitly defines the meaning.
 Use these exact headings in this exact order:
 {headings}
 
@@ -314,6 +322,8 @@ Use bullets in every section.
 Never mention chunk numbers, chunk boundaries, or intermediate processing in the final output.
 Do not convert proposals or suggestions into decisions.
 Do not invent action items or next steps that are not explicit in the chunk notes.
+In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities and do not include tools or products.
+In `# Ambiguous / Unverified Terms`, keep raw terms unless the Domain glossary explicitly defines the meaning.
 Use these exact headings in this exact order:
 {chr(10).join(REQUIRED_HEADINGS)}
 
