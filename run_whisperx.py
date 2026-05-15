@@ -23,7 +23,7 @@ def parse_args():
     )
     parser.add_argument(
         "--type",
-        choices=["all", "json", "srt"],
+        choices=["all", "json", "srt", "both"],
         default="all",
         help="Transcript output type to generate.",
     )
@@ -102,6 +102,12 @@ def build_command(audio_path, output_dir, output_type):
     return command
 
 
+def output_formats(output_type):
+    if output_type == "both":
+        return ["json", "srt"]
+    return [output_type]
+
+
 def main():
     args = parse_args()
 
@@ -119,16 +125,19 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        command = build_command(audio_path, output_dir, args.type)
+        commands = [build_command(audio_path, output_dir, output_type) for output_type in output_formats(args.type)]
     except (FileNotFoundError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print("Running:")
-    print(" ".join(shlex.quote(part) for part in command), flush=True)
+    for command in commands:
+        print("Running:")
+        print(" ".join(shlex.quote(part) for part in command), flush=True)
+        result = subprocess.run(command)
+        if result.returncode != 0:
+            return result.returncode
 
-    result = subprocess.run(command)
-    return result.returncode
+    return 0
 
 
 if __name__ == "__main__":

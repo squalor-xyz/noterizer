@@ -26,6 +26,7 @@ from noterizer_core import (
     resolve_db_path,
     summary_markdown_path,
     transcript_json_path,
+    transcript_srt_path,
 )
 
 
@@ -49,9 +50,9 @@ def parse_args():
     audio_parser.add_argument("--summaries-dir", help="Directory for markdown summaries.")
     audio_parser.add_argument(
         "--transcript-output",
-        choices=["json", "all"],
+        choices=["json", "both", "all"],
         default=None,
-        help="WhisperX output format. Defaults to the active profile.",
+        help="WhisperX transcript outputs to keep. Defaults to the active profile.",
     )
     audio_parser.add_argument(
         "--index",
@@ -112,6 +113,27 @@ def run_command(command):
     result = subprocess.run(command)
     if result.returncode != 0:
         raise RuntimeError(f"Command failed with exit code {result.returncode}")
+
+
+def expected_transcript_paths(audio_path, transcripts_dir, transcript_output):
+    json_path = transcript_json_path(audio_path, transcripts_dir)
+    srt_path = transcript_srt_path(audio_path, transcripts_dir)
+
+    if transcript_output == "json":
+        return [json_path]
+    if transcript_output in {"both", "all"}:
+        return [json_path, srt_path]
+
+    raise ValueError(f"Unsupported transcript output: {transcript_output}")
+
+
+def run_transcription(audio_path, transcripts_dir, transcript_output):
+    if transcript_output == "both":
+        for output_type in ("json", "srt"):
+            run_command(build_command(audio_path, transcripts_dir, output_type))
+        return
+
+    run_command(build_command(audio_path, transcripts_dir, transcript_output))
 
 
 def write_summary(transcript_path, output_path, profile):
@@ -209,18 +231,20 @@ def run_audio_file(args, profile, audio_path):
     )
 
     transcript_path = transcript_json_path(audio_path, transcripts_dir)
+    required_transcript_paths = expected_transcript_paths(audio_path, transcripts_dir, transcript_output)
     summary_path = summary_markdown_path(audio_path, summaries_dir)
     overwrite_transcript = args.overwrite in {"transcript", "both"}
     overwrite_summary = args.overwrite in {"summary", "both"} or overwrite_transcript
 
-    if transcript_path.exists() and not overwrite_transcript:
+    if all(path.exists() for path in required_transcript_paths) and not overwrite_transcript:
         print(f"[audio] Reusing transcript {transcript_path}", flush=True)
     else:
-        if transcript_path.exists() and overwrite_transcript:
-            print(f"[audio] Overwriting transcript {transcript_path}", flush=True)
-        command = build_command(audio_path, transcripts_dir, transcript_output)
-        run_command(command)
+        if any(path.exists() for path in required_transcript_paths) and overwrite_transcript:
+            print(f"[audio] Overwriting transcript outputs for {audio_path.name}", flush=True)
+        run_transcription(audio_path, transcripts_dir, transcript_output)
         ensure_exists(transcript_path, "Transcript JSON")
+        for path in required_transcript_paths:
+            ensure_exists(path, "Transcript output")
 
     if summary_path.exists() and not overwrite_summary:
         print(f"[audio] Reusing summary {summary_path}", flush=True)

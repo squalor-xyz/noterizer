@@ -5,7 +5,7 @@
 Default behavior:
 
 - transcribe with WhisperX
-- write transcript JSON to `transcripts/`
+- write transcript JSON and SRT to `transcripts/`
 - summarize transcript to markdown in `summaries/`
 - index transcript and summary into the shared database
 
@@ -31,7 +31,13 @@ python3 noterizer.py audio \
   --summaries-dir /path/to/summaries
 ```
 
-Generate all WhisperX output formats instead of JSON only:
+Keep only JSON transcript output from the main audio pipeline:
+
+```bash
+python3 noterizer.py audio /path/to/input.mp3 --transcript-output json
+```
+
+Generate all WhisperX output formats instead of the default JSON + SRT:
 
 ```bash
 python3 noterizer.py audio /path/to/input.mp3 --transcript-output all
@@ -132,7 +138,8 @@ project/
 ├── audio/
 │   ├── input.mp3
 │   ├── transcripts/
-│   │   └── input.json
+│   │   ├── input.json
+│   │   └── input.srt
 │   └── summaries/
 │       └── input.summary.md
 ├── images/
@@ -148,10 +155,12 @@ If you want manual control over individual steps:
 
 ```bash
 python3 run_whisperx.py input.mp3
+python3 run_whisperx.py input.mp3 --type srt
+python3 run_whisperx.py input.mp3 --type both
 python3 summarize_transcript.py transcripts/input.json
 python3 image_to_note.py note.jpg
 python3 index_transcript.py transcripts/input.json
 python3 ask_memory.py "What did we discuss?"
 ```
 
-Those are preserved for manual or incremental use, but `noterizer.py` is now the supported workflow.
+`run_whisperx.py` supports `json`, `srt`, `both`, and `all`. `noterizer.py` is still the supported end-to-end workflow, with JSON + SRT as the default transcript artifacts.

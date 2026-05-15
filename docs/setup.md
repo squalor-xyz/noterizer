@@ -122,7 +122,7 @@ source ~/.bashrc
 
 This repo keeps the baseline WhisperX flags in [`whisper-cmd.txt`](../whisper-cmd.txt).
 
-Current defaults:
+Baseline example from `whisper-cmd.txt`:
 
 ```bash
 whisperx input.mp3 \
@@ -136,7 +136,12 @@ whisperx input.mp3 \
   --output_dir transcripts
 ```
 
-`run_whisperx.py` and `noterizer.py` both use that file.
+`run_whisperx.py` and `noterizer.py` both use that file, but they override `--output_format` at runtime.
+
+Current script behavior:
+
+- `python3 noterizer.py audio ...` defaults to transcript JSON + SRT
+- `python3 run_whisperx.py ...` defaults to `--type all`
 
 ## 7. Recommended Hardware
 

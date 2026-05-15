@@ -20,6 +20,7 @@ Audio flow:
 ```text
 audio file
   -> transcripts/<name>.json
+  -> transcripts/<name>.srt
   -> summaries/<name>.summary.md
   -> shared Chroma database
 ```
@@ -53,6 +54,8 @@ Audio:
 ```bash
 python3 noterizer.py audio /path/to/input.mp3
 ```
+
+By default, the main audio pipeline keeps both transcript JSON and SRT outputs.
 
 Image OCR:
 
@@ -154,6 +157,8 @@ Convenience step-by-step scripts are still kept:
 - `image_to_note.py`
 
 They share the same profile model and database defaults as `noterizer.py`. Use them if you want one step at a time. For normal use, `noterizer.py` is the supported primary interface.
+
+`run_whisperx.py` supports transcript-only output selection with `--type json`, `--type srt`, `--type both`, or `--type all`.
 
 ## Documentation
 

@@ -46,7 +46,7 @@ DEFAULT_PROFILE = {
     "audio": {
         "transcripts_dirname": "transcripts",
         "summaries_dirname": "summaries",
-        "transcript_output": "json",
+        "transcript_output": "both",
         "index": "both",
     },
     "image": {
@@ -146,6 +146,10 @@ def ensure_dir(path):
 
 def transcript_json_path(audio_path, transcripts_dir):
     return transcripts_dir / f"{audio_path.stem}.json"
+
+
+def transcript_srt_path(audio_path, transcripts_dir):
+    return transcripts_dir / f"{audio_path.stem}.srt"
 
 
 def summary_markdown_path(audio_path, summaries_dir):
