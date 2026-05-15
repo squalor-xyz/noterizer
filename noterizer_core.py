@@ -180,6 +180,58 @@ def auth_headers(backend):
     return {}
 
 
+def unload_backend_model(backend):
+    kind = backend.get("kind")
+    model = backend.get("model")
+    url = backend.get("url")
+
+    if kind == "ollama_generate":
+        requests.post(
+            url,
+            json={"model": model, "prompt": "", "keep_alive": 0},
+            timeout=60,
+            headers=auth_headers(backend),
+        ).raise_for_status()
+        return
+
+    if kind == "ollama_chat":
+        requests.post(
+            url,
+            json={"model": model, "messages": [], "keep_alive": 0},
+            timeout=60,
+            headers=auth_headers(backend),
+        ).raise_for_status()
+        return
+
+    if kind == "ollama_embeddings":
+        unload_url = url.replace("/api/embeddings", "/api/generate")
+        requests.post(
+            unload_url,
+            json={"model": model, "prompt": "", "keep_alive": 0},
+            timeout=60,
+            headers=auth_headers(backend),
+        ).raise_for_status()
+
+
+def unload_profile_ollama_models(profile):
+    seen = set()
+
+    for key in ("summary_backend", "query_backend", "embedding_backend", "vision_backend"):
+        backend = profile.get(key)
+        if not backend:
+            continue
+
+        kind = backend.get("kind")
+        if not kind or not kind.startswith("ollama_"):
+            continue
+
+        model_key = (backend.get("url"), backend.get("model"), kind)
+        if model_key in seen:
+            continue
+        seen.add(model_key)
+        unload_backend_model(backend)
+
+
 def generate_text(prompt, backend):
     kind = backend["kind"]
     url = backend["url"]
@@ -194,6 +246,7 @@ def generate_text(prompt, backend):
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
+                "keep_alive": 0,
                 "options": options,
             },
             timeout=600,
@@ -269,6 +322,7 @@ def extract_note(image_path, backend, prompt=IMAGE_PROMPT):
             json={
                 "model": model,
                 "stream": False,
+                "keep_alive": 0,
                 "messages": [
                     {
                         "role": "user",

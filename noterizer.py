@@ -27,6 +27,7 @@ from noterizer_core import (
     summary_markdown_path,
     transcript_json_path,
     transcript_srt_path,
+    unload_profile_ollama_models,
 )
 
 
@@ -241,6 +242,8 @@ def run_audio_file(args, profile, audio_path):
     else:
         if any(path.exists() for path in required_transcript_paths) and overwrite_transcript:
             print(f"[audio] Overwriting transcript outputs for {audio_path.name}", flush=True)
+        print("[audio] Unloading Ollama models before WhisperX...", flush=True)
+        unload_profile_ollama_models(profile)
         run_transcription(audio_path, transcripts_dir, transcript_output)
         ensure_exists(transcript_path, "Transcript JSON")
         for path in required_transcript_paths:
