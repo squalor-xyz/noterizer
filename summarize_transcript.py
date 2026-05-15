@@ -40,6 +40,7 @@ REQUIRED_HEADINGS = [
 CHUNK_NOTE_HEADINGS = REQUIRED_HEADINGS[1:]
 CHUNK_TARGET_CHARS = 8000
 DIRECT_SUMMARY_MAX_CHARS = 12000
+LONG_TRANSCRIPT_MIN_LINES = 120
 
 CLOSING_PHRASES = {
     "thank you",
@@ -57,6 +58,11 @@ CLOSING_PHRASES = {
     "cool",
     "amen",
     "right",
+    "yeah",
+    "yes",
+    "no",
+    "oh",
+    "you",
 }
 
 
@@ -100,7 +106,52 @@ def load_transcript(path):
     return "\n".join(load_transcript_lines(path))
 
 
-def chunk_transcript_lines(lines, target_chars=CHUNK_TARGET_CHARS):
+def extract_line_text(line):
+    return line.split(": ", 1)[1] if ": " in line else line
+
+
+def extract_line_speaker(line):
+    left = line.split(": ", 1)[0]
+    return left.split("] ", 1)[1] if "] " in left else "UNKNOWN"
+
+
+def informative_word_count(text):
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9+./_-]*", text)
+    return sum(1 for word in words if len(word) >= 3)
+
+
+def is_low_information_line(line):
+    text = extract_line_text(line).strip()
+    normalized = normalize_text(text)
+
+    if is_trivial_closing_segment(text):
+        return True
+
+    if informative_word_count(text) == 0:
+        return True
+
+    if len(normalized.split()) <= 2 and normalize_text(text) in CLOSING_PHRASES:
+        return True
+
+    return False
+
+
+def filter_long_transcript_lines(lines):
+    if len(lines) < LONG_TRANSCRIPT_MIN_LINES:
+        return lines
+
+    filtered_lines = [line for line in lines if not is_low_information_line(line)]
+    if filtered_lines:
+        logger.info(
+            "Filtered %s low-information lines from long transcript",
+            len(lines) - len(filtered_lines),
+        )
+        return filtered_lines
+
+    return lines
+
+
+def chunk_transcript_line_groups(lines, target_chars=CHUNK_TARGET_CHARS):
     if not lines:
         return []
 
@@ -111,7 +162,7 @@ def chunk_transcript_lines(lines, target_chars=CHUNK_TARGET_CHARS):
     for line in lines:
         line_chars = len(line) + 1
         if current_lines and current_chars + line_chars > target_chars:
-            chunks.append("\n".join(current_lines))
+            chunks.append(current_lines)
             current_lines = [line]
             current_chars = line_chars
             continue
@@ -120,9 +171,57 @@ def chunk_transcript_lines(lines, target_chars=CHUNK_TARGET_CHARS):
         current_chars += line_chars
 
     if current_lines:
-        chunks.append("\n".join(current_lines))
+        chunks.append(current_lines)
 
     return chunks
+
+
+def chunk_transcript_lines(lines, target_chars=CHUNK_TARGET_CHARS):
+    return ["\n".join(group) for group in chunk_transcript_line_groups(lines, target_chars)]
+
+
+def is_low_information_chunk_lines(chunk_lines):
+    if not chunk_lines:
+        return True
+
+    total_lines = len(chunk_lines)
+    low_info_lines = sum(1 for line in chunk_lines if is_low_information_line(line))
+    unknown_lines = sum(1 for line in chunk_lines if extract_line_speaker(line) == "UNKNOWN")
+    informative_words = sum(informative_word_count(extract_line_text(line)) for line in chunk_lines)
+
+    if informative_words < 25:
+        return True
+
+    if low_info_lines / total_lines > 0.6:
+        return True
+
+    if unknown_lines / total_lines > 0.85 and informative_words < 80:
+        return True
+
+    return False
+
+
+def is_noisy_tail_chunk_lines(chunk_lines):
+    if not chunk_lines:
+        return True
+
+    total_lines = len(chunk_lines)
+    unknown_lines = sum(1 for line in chunk_lines if extract_line_speaker(line) == "UNKNOWN")
+    informative_words = sum(informative_word_count(extract_line_text(line)) for line in chunk_lines)
+
+    return unknown_lines / total_lines > 0.12 and informative_words < 550
+
+
+def trim_low_information_tail_chunks(chunk_groups):
+    trimmed = list(chunk_groups)
+
+    while len(trimmed) > 1 and (
+        is_low_information_chunk_lines(trimmed[-1]) or is_noisy_tail_chunk_lines(trimmed[-1])
+    ):
+        logger.info("Dropping low-information tail chunk with %s lines", len(trimmed[-1]))
+        trimmed.pop()
+
+    return trimmed
 
 
 def build_prompt(transcript):
@@ -279,6 +378,32 @@ def validate_summary(summary):
     if first_nonempty and first_nonempty != REQUIRED_HEADINGS[0]:
         errors.append("summary begins with prose instead of the required heading")
 
+    section_map = {}
+    current_heading = None
+    current_lines = []
+
+    for line in stripped.splitlines():
+        if line.startswith("# "):
+            if current_heading is not None:
+                section_map[current_heading] = current_lines
+            current_heading = line.strip()
+            current_lines = []
+            continue
+
+        if current_heading is not None:
+            current_lines.append(line.rstrip())
+
+    if current_heading is not None:
+        section_map[current_heading] = current_lines
+
+    for heading in REQUIRED_HEADINGS:
+        section_lines = section_map.get(heading)
+        if section_lines is None:
+            continue
+
+        if not any(line.strip() for line in section_lines):
+            errors.append(f"section is empty: {heading}")
+
     return errors
 
 
@@ -342,16 +467,24 @@ Chunk notes:
 def summarize_chunk_notes(chunks, backend):
     notes = []
 
-    for index, chunk_text in enumerate(chunks, start=1):
-        print(f"[summary] Summarizing chunk {index}/{len(chunks)}...", flush=True)
-        notes.append(generate_text(build_chunk_prompt(chunk_text, index, len(chunks)), backend))
+    retained_chunks = [chunk for chunk in chunks if not is_low_information_chunk_lines(chunk)]
+
+    if not retained_chunks:
+        retained_chunks = chunks
+
+    for index, chunk_lines in enumerate(retained_chunks, start=1):
+        chunk_text = "\n".join(chunk_lines)
+        print(f"[summary] Summarizing chunk {index}/{len(retained_chunks)}...", flush=True)
+        notes.append(generate_text(build_chunk_prompt(chunk_text, index, len(retained_chunks)), backend))
 
     return notes
 
 
 def generate_chunked_summary(transcript, backend):
-    chunks = chunk_transcript_lines(transcript.splitlines())
-    chunk_notes = summarize_chunk_notes(chunks, backend)
+    lines = filter_long_transcript_lines(transcript.splitlines())
+    chunk_groups = chunk_transcript_line_groups(lines)
+    chunk_groups = trim_low_information_tail_chunks(chunk_groups)
+    chunk_notes = summarize_chunk_notes(chunk_groups, backend)
     merged_summary = generate_text(build_merge_prompt(chunk_notes), backend)
     return merged_summary, chunk_notes
 
