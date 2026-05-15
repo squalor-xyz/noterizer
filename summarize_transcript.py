@@ -145,6 +145,17 @@ SUSPECT_MM_WAVE_RE = re.compile(r"\b\d+\s*mm\s+wave\b", re.IGNORECASE)
 MIXED_TOKEN_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*\d[A-Za-z0-9_]*\b")
 PAREN_TERM_RE = re.compile(r"\b([A-Z0-9][A-Z0-9_-]{1,})\s+\(([^)]+)\)")
 SUSPICIOUS_EXPANSION_WORDS = {"somber"}
+KNOWN_NON_PERSON_NAMES = {
+    "nigel",
+    "mariner",
+    "report-o-matic",
+    "report o matic",
+    "rfmx",
+    "chess",
+    "meg",
+    "pyrite",
+    "instrument studio",
+}
 SOFT_DECISION_RE = re.compile(
     r"\b(suggest(?:ed)?|proposal|propose|possible|maybe|might|could|should|consider|considering|"
     r"explore|exploring|evaluate|evaluating|future work|planned|plan to|idea)\b",
@@ -364,6 +375,29 @@ def sanitize_people_line(line):
     return line
 
 
+def split_people_line(line):
+    stripped = line.strip()
+    if not stripped.startswith("- "):
+        return [line]
+
+    body = stripped[2:]
+    parts = [part.strip() for part in body.split(",")]
+    if len(parts) <= 1:
+        return [line]
+
+    return [f"- {part}" for part in parts if part]
+
+
+def is_non_person_entry(line):
+    stripped = line.strip()
+    if stripped == "- None stated.":
+        return False
+
+    body = stripped[2:] if stripped.startswith("- ") else stripped
+    body = re.sub(r"\s*\(.*?\)\s*$", "", body).strip().lower()
+    return body in KNOWN_NON_PERSON_NAMES
+
+
 def strip_unsupported_parenthetical_expansions(line, transcript_text_lower):
     def replace(match):
         term, expansion = match.groups()
@@ -430,7 +464,12 @@ def sanitize_summary_output(summary, template_name, transcript_lines):
                 continue
 
             if heading == "# People Mentioned":
-                line = sanitize_people_line(line)
+                split_lines = split_people_line(sanitize_people_line(line))
+                for split_line in split_lines:
+                    if is_non_person_entry(split_line):
+                        continue
+                    cleaned_lines.append(split_line)
+                continue
 
             if template_name == "presentation" and heading in PRESENTATION_FACTUAL_HEADINGS:
                 line = strip_unsupported_parenthetical_expansions(line, transcript_text_lower)
