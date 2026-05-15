@@ -74,6 +74,36 @@ python3 noterizer.py query \
   "What decisions were made?"
 ```
 
+List bundled profiles:
+
+```bash
+python3 noterizer.py profiles
+```
+
+## Profiles
+
+Profiles live in [`profiles/`](./profiles/) and let you swap models, endpoints, and database defaults without editing code.
+
+Bundled profiles include:
+
+- `default`: local Ollama-based setup
+- `ollama-light`: lighter Ollama model choices
+- `openai-compatible-local`: local server exposing OpenAI-style `/v1/*` endpoints
+- `openai-api-template`: template for hosted OpenAI-compatible APIs using `OPENAI_API_KEY`
+
+Use a profile by name:
+
+```bash
+python3 noterizer.py audio input.mp3 --profile ollama-light
+python3 noterizer.py query "What changed?" --profile openai-compatible-local
+```
+
+Use a custom local profile file:
+
+```bash
+python3 noterizer.py audio input.mp3 --profile ./profiles/my-stack.local.json
+```
+
 ## Database Model
 
 This repo now uses one shared database for all indexed content in `./noterizer_db`.
@@ -100,16 +130,22 @@ noterizer/
 ├── index_transcript.py
 ├── ask_memory.py
 ├── image_to_note.py
+├── noterizer_core.py
+├── profiles/
+│   ├── default.json
+│   ├── ollama-light.json
+│   └── ...
 ├── whisper-cmd.txt
 ├── README.MD
 └── docs/
+    ├── profiles.md
     ├── setup.md
     └── usage.md
 ```
 
 ## Existing Scripts
 
-Legacy step-by-step scripts are still kept:
+Convenience step-by-step scripts are still kept:
 
 - `run_whisperx.py`
 - `summarize_transcript.py`
@@ -117,9 +153,10 @@ Legacy step-by-step scripts are still kept:
 - `ask_memory.py`
 - `image_to_note.py`
 
-Use them if you want one step at a time or need to inspect a single stage. For normal use, `noterizer.py` is the supported primary interface.
+They share the same profile model and database defaults as `noterizer.py`. Use them if you want one step at a time. For normal use, `noterizer.py` is the supported primary interface.
 
 ## Documentation
 
 - Setup: [docs/setup.md](./docs/setup.md)
 - Usage: [docs/usage.md](./docs/usage.md)
+- Profiles: [docs/profiles.md](./docs/profiles.md)

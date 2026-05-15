@@ -15,6 +15,13 @@ Example:
 python3 noterizer.py audio /path/to/input.mp3
 ```
 
+Use a different backend/model profile:
+
+```bash
+python3 noterizer.py audio /path/to/input.mp3 --profile ollama-light
+python3 noterizer.py audio /path/to/input.mp3 --profile openai-compatible-local
+```
+
 Custom output directories:
 
 ```bash
@@ -77,6 +84,14 @@ Query across everything:
 python3 noterizer.py query "What follow-up items were mentioned?"
 ```
 
+Use a non-default profile:
+
+```bash
+python3 noterizer.py query \
+  --profile openai-compatible-local \
+  "What technical risks were discussed?"
+```
+
 Restrict query to one content type:
 
 ```bash
@@ -106,7 +121,7 @@ Why:
 - one query surface across transcript, summary, and OCR note data
 - metadata still allows filtering by content type
 
-The main tradeoff is that legacy standalone scripts such as `ask_memory.py` still use their earlier database assumptions. Use `noterizer.py query` for the supported combined flow.
+Standalone scripts now use the same shared profile and database model, so they no longer diverge from the main CLI.
 
 ## Output Layout
 
@@ -127,7 +142,7 @@ project/
 └── noterizer_db/
 ```
 
-## Legacy One-Off Scripts
+## Convenience One-Off Scripts
 
 If you want manual control over individual steps:
 

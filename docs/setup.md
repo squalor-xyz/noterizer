@@ -26,7 +26,19 @@ pip install -U \
   requests
 ```
 
-## 2. Install Ollama
+## 2. Choose a Backend Style
+
+This repo can work with:
+
+- local Ollama
+- local OpenAI-compatible servers such as vLLM, LocalAI, or LM Studio
+- hosted OpenAI-compatible APIs
+
+See [profiles.md](./profiles.md) for profile details.
+
+## 3. Install Ollama
+
+If you are using an Ollama-based profile such as `default` or `ollama-light`:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
@@ -38,7 +50,9 @@ Verify:
 ollama --version
 ```
 
-## 3. Pull Models
+## 4. Pull Models
+
+If you are using an Ollama-based profile, pull the models referenced by that profile:
 
 Chat / summarization model:
 
@@ -67,7 +81,9 @@ ollama pull llava
 ollama pull llama3.2-vision
 ```
 
-## 4. Hugging Face Setup for Diarization
+If you are using an OpenAI-compatible local server or hosted API instead, configure the relevant profile and ensure those models are available on that backend.
+
+## 5. Hugging Face Setup for Diarization
 
 WhisperX diarization requires Hugging Face access to pyannote models.
 
@@ -102,7 +118,7 @@ If you use shell startup files, reload them:
 source ~/.bashrc
 ```
 
-## 5. WhisperX Command Baseline
+## 6. WhisperX Command Baseline
 
 This repo keeps the baseline WhisperX flags in [`whisper-cmd.txt`](../whisper-cmd.txt).
 
@@ -122,7 +138,7 @@ whisperx input.mp3 \
 
 `run_whisperx.py` and `noterizer.py` both use that file.
 
-## 6. Recommended Hardware
+## 7. Recommended Hardware
 
 Minimum:
 
@@ -142,7 +158,7 @@ Ideal:
 - large local SSD
 - fast CPU
 
-## 7. Verify Local Services
+## 8. Verify Local Services
 
 Ollama should be running before summarization, OCR, indexing, or query:
 
@@ -157,4 +173,5 @@ python3 noterizer.py --help
 python3 noterizer.py audio --help
 python3 noterizer.py image --help
 python3 noterizer.py query --help
+python3 noterizer.py profiles
 ```
