@@ -15,4 +15,5 @@ notes/
 voice_db/
 noterizer_db/
 tmp/
+noterizer.log*
 scratch.txt
