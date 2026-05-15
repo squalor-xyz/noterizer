@@ -3,7 +3,9 @@ import base64
 import copy
 import hashlib
 import json
+import logging
 import os
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import requests
@@ -60,6 +62,7 @@ DEFAULT_PROFILE = {
 }
 
 PROFILES_DIR = Path(__file__).with_name("profiles")
+LOG_FILE = Path(__file__).with_name("noterizer.log")
 
 IMAGE_PROMPT = """
 Perform OCR extraction on this handwritten note.
@@ -76,6 +79,36 @@ Rules:
 - Preserve arrows, bullets, indentation, and labels.
 - Output Markdown only.
 """.strip()
+
+
+def add_log_level_arg(parser):
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="ERROR",
+        help="Minimum level to write to the shared log file.",
+    )
+
+
+def configure_logging(level_name="ERROR"):
+    root_logger = logging.getLogger()
+    logger_level = getattr(logging, level_name.upper(), logging.ERROR)
+
+    for handler in root_logger.handlers:
+        if getattr(handler, "_noterizer_handler", False):
+            handler.setLevel(logger_level)
+            root_logger.setLevel(min(root_logger.level, logger_level))
+            return
+
+    handler = RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=2)
+    handler._noterizer_handler = True
+    handler.setLevel(logger_level)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logger_level)
 
 
 def merge_dicts(base, override):

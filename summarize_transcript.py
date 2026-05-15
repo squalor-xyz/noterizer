@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import logging
 import re
 from pathlib import Path
 
 import requests
 
-from noterizer_core import generate_text, load_profile
+from noterizer_core import add_log_level_arg, configure_logging, generate_text, load_profile
+
+logger = logging.getLogger(__name__)
 
 
 DOMAIN_GLOSSARY = """
@@ -403,6 +406,7 @@ def generate_summary_markdown(transcript, backend):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Summarize a WhisperX transcript JSON file.")
+    add_log_level_arg(parser)
     parser.add_argument("transcript_json", help="Path to the transcript JSON file.")
     parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
     parser.add_argument("--output", help="Output markdown path. Defaults beside the transcript JSON.")
@@ -411,9 +415,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+    configure_logging(args.log_level)
     transcript_path = Path(args.transcript_json).expanduser().resolve()
 
     if not transcript_path.exists():
+        logger.error("Transcript file not found: %s", transcript_path)
         print(f"Error: file not found: {transcript_path}")
         return 1
 
@@ -423,6 +429,7 @@ def main():
     transcript = load_transcript(transcript_path)
 
     if not transcript.strip():
+        logger.error("Transcript contains no usable text: %s", transcript_path)
         print("Error: transcript contains no usable text.")
         return 1
 
@@ -434,6 +441,7 @@ def main():
     try:
         summary = generate_summary_markdown(transcript, profile["summary_backend"])
     except (ValueError, requests.RequestException) as exc:
+        logger.exception("Summary generation failed for %s", transcript_path)
         print(f"Error: {exc}")
         return 1
 

@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 from pathlib import Path
 
 import requests
 
-from noterizer_core import default_child_dir, ensure_dir, extract_note, load_profile, note_markdown_path
+from noterizer_core import (
+    add_log_level_arg,
+    configure_logging,
+    default_child_dir,
+    ensure_dir,
+    extract_note,
+    load_profile,
+    note_markdown_path,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="OCR an image into markdown.")
+    add_log_level_arg(parser)
     parser.add_argument("image_file", help="Path to the image file.")
     parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
     parser.add_argument("--output", help="Output markdown path.")
@@ -18,9 +30,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+    configure_logging(args.log_level)
     image_path = Path(args.image_file).expanduser().resolve()
 
     if not image_path.exists():
+        logger.error("Image file not found: %s", image_path)
         print(f"File not found: {image_path}")
         return 1
 
@@ -31,6 +45,7 @@ def main():
     try:
         note = extract_note(image_path, profile["vision_backend"])
     except requests.RequestException as exc:
+        logger.exception("Image OCR failed for %s", image_path)
         print(f"Error: {exc}")
         return 1
 

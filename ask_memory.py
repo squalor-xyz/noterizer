@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 import sys
 
 import requests
 
 from noterizer_core import (
+    add_log_level_arg,
+    configure_logging,
     embed_text,
     format_context_item,
     generate_text,
@@ -13,9 +16,12 @@ from noterizer_core import (
     resolve_db_path,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Query the shared Noterizer database.")
+    add_log_level_arg(parser)
     parser.add_argument("question", help="Question to ask.")
     parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
     parser.add_argument("--db-path", help="Override the database path.")
@@ -31,6 +37,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    configure_logging(args.log_level)
 
     try:
         profile = load_profile(args.profile)
@@ -48,6 +55,7 @@ def main():
             where=where,
         )
     except (RuntimeError, ValueError, requests.RequestException) as exc:
+        logger.exception("ask_memory query setup failed")
         print(f"Error: {exc}")
         return 1
 
@@ -77,6 +85,7 @@ Indexed excerpts:
     try:
         print(generate_text(prompt, profile["query_backend"]))
     except requests.RequestException as exc:
+        logger.exception("ask_memory final answer generation failed")
         print(f"Error: {exc}")
         return 1
 

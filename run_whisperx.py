@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import logging
 import os
 import shlex
 import shutil
@@ -7,6 +8,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from noterizer_core import add_log_level_arg, configure_logging
+
+logger = logging.getLogger(__name__)
 
 COMMAND_FILE = Path(__file__).with_name("whisper-cmd.txt")
 SKIP_VALUE_FLAGS = {"--output_format", "--output_dir"}
@@ -16,6 +20,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Run WhisperX using the baseline options from whisper-cmd.txt."
     )
+    add_log_level_arg(parser)
     parser.add_argument("audio_file", help="Path to the audio file to transcribe.")
     parser.add_argument(
         "--output-dir",
@@ -105,14 +110,17 @@ def output_formats(output_type):
 
 def main():
     args = parse_args()
+    configure_logging(args.log_level)
 
     if shutil.which("whisperx") is None:
+        logger.error("whisperx is not installed or not on PATH")
         print("Error: whisperx is not installed or not on PATH.", file=sys.stderr)
         return 127
 
     audio_path = Path(args.audio_file).expanduser().resolve()
 
     if not audio_path.exists():
+        logger.error("Audio file not found: %s", audio_path)
         print(f"Error: audio file not found: {audio_path}", file=sys.stderr)
         return 1
 
@@ -122,6 +130,7 @@ def main():
     try:
         commands = [build_command(audio_path, output_dir, output_type) for output_type in output_formats(args.type)]
     except (FileNotFoundError, ValueError) as exc:
+        logger.exception("Failed to build WhisperX command for %s", audio_path)
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -130,6 +139,7 @@ def main():
         print(" ".join(shlex.quote(part) for part in command), flush=True)
         result = subprocess.run(command)
         if result.returncode != 0:
+            logger.error("WhisperX command failed with exit code %s: %s", result.returncode, command)
             return result.returncode
 
     return 0

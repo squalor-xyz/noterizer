@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import glob
+import logging
 import sys
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from run_whisperx import build_command
 from summarize_transcript import build_prompt, generate_summary_markdown, load_transcript
 
 from noterizer_core import (
+    add_log_level_arg,
     available_profiles,
+    configure_logging,
     default_child_dir,
     embed_text,
     ensure_dir,
@@ -30,11 +33,14 @@ from noterizer_core import (
     unload_profile_ollama_models,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Unified CLI for audio transcription, summarization, indexing, image OCR, and query."
     )
+    add_log_level_arg(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     audio_parser = subparsers.add_parser(
@@ -113,6 +119,7 @@ def run_command(command):
     print(" ".join(shlex.quote(part) for part in command), flush=True)
     result = subprocess.run(command)
     if result.returncode != 0:
+        logger.error("Command failed with exit code %s: %s", result.returncode, command)
         raise RuntimeError(f"Command failed with exit code {result.returncode}")
 
 
@@ -336,6 +343,7 @@ def list_profiles(verbose):
 
 def main():
     args = parse_args()
+    configure_logging(args.log_level)
 
     try:
         if args.command == "profiles":
@@ -350,9 +358,11 @@ def main():
         if args.command == "query":
             return query_collection(args, profile)
     except (FileNotFoundError, RuntimeError, ValueError, requests.RequestException) as exc:
+        logger.exception("Top-level noterizer failure")
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    logger.error("Unknown command reached main dispatch: %s", args.command)
     print(f"Unknown command: {args.command}", file=sys.stderr)
     return 1
 
