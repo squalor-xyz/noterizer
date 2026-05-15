@@ -335,6 +335,8 @@ python3 noterizer.py --log-level INFO audio input.mp3
 python3 summarize_transcript.py --log-level INFO transcripts/input.json
 ```
 
+At `INFO` level, the shared log also captures timing data for major steps such as transcription, chunk summarization, indexing, OCR, and query.
+
 ## 12. Common Failures
 
 ### Hugging Face / pyannote access errors

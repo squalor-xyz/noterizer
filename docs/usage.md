@@ -57,6 +57,21 @@ Generate all WhisperX output formats instead of the default JSON + SRT:
 python3 noterizer.py audio /path/to/input.mp3 --transcript-output all
 ```
 
+Control overwrite behavior for reruns:
+
+```bash
+python3 noterizer.py audio /path/to/input.mp3 --overwrite
+python3 noterizer.py audio /path/to/input.mp3 --overwrite summary
+python3 noterizer.py audio /path/to/input.mp3 --overwrite none
+```
+
+Overwrite modes:
+
+- `--overwrite` or `--overwrite both`: regenerate transcript and summary
+- `--overwrite transcript`: regenerate transcript and summary
+- `--overwrite summary`: keep the transcript, regenerate the summary
+- `--overwrite none`: reuse existing outputs when present
+
 Skip indexing:
 
 ```bash
@@ -104,6 +119,14 @@ Query across everything:
 python3 noterizer.py query "What follow-up items were mentioned?"
 ```
 
+List indexed sources before narrowing a query:
+
+```bash
+python3 noterizer.py query-list
+python3 noterizer.py query-list --type summary
+python3 noterizer.py query-list --type summary --date 2026-05-13
+```
+
 Use a non-default profile:
 
 ```bash
@@ -118,6 +141,20 @@ Restrict query to one content type:
 python3 noterizer.py query --type transcript "Who said this?"
 python3 noterizer.py query --type summary "What decisions were made?"
 python3 noterizer.py query --type image_note "What was written on the whiteboard?"
+```
+
+Restrict query to one indexed source:
+
+```bash
+python3 noterizer.py query --type summary --source 2 "What were the main topics?"
+python3 noterizer.py query --type summary --source-name 260513_1057_ni-connect_keynote-01.summary.md "What was shown?"
+```
+
+Restrict query to sources from one date:
+
+```bash
+python3 noterizer.py query --type summary --date 2026-05-13 "What themes came up?"
+python3 noterizer.py query --type summary --date 260513 --source 2 "What were the main topics?"
 ```
 
 Control retrieval depth:

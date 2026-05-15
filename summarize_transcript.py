@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from time import perf_counter
 
 import requests
 
@@ -810,23 +811,40 @@ def summarize_chunk_notes(chunks, backend, template_name):
     for index, chunk_lines in enumerate(retained_chunks, start=1):
         chunk_text = "\n".join(chunk_lines)
         print(f"[summary] Summarizing chunk {index}/{len(retained_chunks)}...", flush=True)
+        started = perf_counter()
         notes.append(generate_text(build_chunk_prompt(chunk_text, index, len(retained_chunks), template_name), backend))
+        logger.info(
+            "Summarized chunk %s/%s in %.2fs",
+            index,
+            len(retained_chunks),
+            perf_counter() - started,
+        )
 
     return notes
 
 
 def generate_chunked_summary(transcript, backend, template_name):
+    started = perf_counter()
     lines = filter_long_transcript_lines(transcript.splitlines())
     chunk_groups = chunk_transcript_line_groups(lines)
     chunk_groups = trim_low_information_tail_chunks(chunk_groups)
     chunk_notes = summarize_chunk_notes(chunk_groups, backend, template_name)
+    merge_started = perf_counter()
     merged_summary = generate_text(build_merge_prompt(chunk_notes, template_name), backend)
+    logger.info(
+        "Merged %s chunk notes in %.2fs (chunked summary total %.2fs)",
+        len(chunk_notes),
+        perf_counter() - merge_started,
+        perf_counter() - started,
+    )
     return merged_summary, chunk_notes
 
 
 def try_repair_summary(invalid_summary, errors, backend, template_name):
     print("[summary] Validation failed. Retrying with repair prompt...", flush=True)
+    started = perf_counter()
     repaired_summary = generate_text(build_repair_prompt(invalid_summary, errors, template_name), backend)
+    logger.info("Generated repair summary in %.2fs", perf_counter() - started)
     return repaired_summary, validate_summary(repaired_summary, template_name)
 
 
@@ -837,6 +855,7 @@ def resolve_summary_format(requested_format, transcript_lines, transcript_path=N
 
 
 def generate_summary_markdown(transcript, backend, summary_format, transcript_lines, transcript_path=None):
+    started = perf_counter()
     template_name, detected = resolve_summary_format(summary_format, transcript_lines, transcript_path)
     logger.info(
         "Using summary format %s (%s)",
@@ -846,17 +865,21 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
     chunk_notes = None
 
     if len(transcript) <= DIRECT_SUMMARY_MAX_CHARS:
+        direct_started = perf_counter()
         summary = generate_text(build_prompt(transcript, template_name), backend)
+        logger.info("Generated direct summary in %.2fs", perf_counter() - direct_started)
     else:
         print("[summary] Using chunked summarization...", flush=True)
         summary, chunk_notes = generate_chunked_summary(transcript, backend, template_name)
 
     errors = validate_summary(summary, template_name)
     if not errors:
+        logger.info("Completed summary generation in %.2fs", perf_counter() - started)
         return sanitize_summary_output(summary, template_name, transcript_lines), template_name, detected
 
     repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
     if not repaired_errors:
+        logger.info("Completed summary generation in %.2fs after repair", perf_counter() - started)
         return sanitize_summary_output(repaired_summary, template_name, transcript_lines), template_name, detected
 
     if chunk_notes is None:
@@ -864,23 +887,31 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
         summary, chunk_notes = generate_chunked_summary(transcript, backend, template_name)
         errors = validate_summary(summary, template_name)
         if not errors:
+            logger.info("Completed summary generation in %.2fs after chunk fallback", perf_counter() - started)
             return sanitize_summary_output(summary, template_name, transcript_lines), template_name, detected
 
         repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
         if not repaired_errors:
+            logger.info(
+                "Completed summary generation in %.2fs after chunk fallback repair",
+                perf_counter() - started,
+            )
             return sanitize_summary_output(repaired_summary, template_name, transcript_lines), template_name, detected
 
     print("[summary] Rebuilding final summary from chunk notes...", flush=True)
+    recovery_started = perf_counter()
     recovered_summary = generate_text(
         build_notes_recovery_prompt(chunk_notes, repaired_errors, template_name),
         backend,
     )
+    logger.info("Generated recovery summary in %.2fs", perf_counter() - recovery_started)
     recovery_errors = validate_summary(recovered_summary, template_name)
 
     if recovery_errors:
         joined_errors = "; ".join(recovery_errors)
         raise ValueError(f"Summary validation failed after recovery: {joined_errors}")
 
+    logger.info("Completed summary generation in %.2fs after recovery", perf_counter() - started)
     return sanitize_summary_output(recovered_summary, template_name, transcript_lines), template_name, detected
 
 

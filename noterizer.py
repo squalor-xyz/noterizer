@@ -2,8 +2,11 @@
 import argparse
 import glob
 import logging
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 
 import requests
 
@@ -34,6 +37,8 @@ from noterizer_core import (
 )
 
 logger = logging.getLogger(__name__)
+
+SOURCE_DATE_RE = re.compile(r"^(?P<stamp>\d{6}|\d{8})_")
 
 
 def parse_args():
@@ -106,7 +111,30 @@ def parse_args():
         help="Restrict retrieval to one content type.",
     )
     query_parser.add_argument("--results", type=int, default=None, help="Number of retrieval results.")
+    query_parser.add_argument("--source", type=int, help="Restrict retrieval to one listed source number.")
+    query_parser.add_argument("--source-name", help="Restrict retrieval to one exact source filename.")
+    query_parser.add_argument(
+        "--date",
+        help="Restrict retrieval to sources whose filenames begin with YYMMDD, YYYYMMDD, or YYYY-MM-DD.",
+    )
     query_parser.add_argument("--db-path", help="Override the database path.")
+
+    query_list_parser = subparsers.add_parser(
+        "query-list",
+        help="List indexed sources that can be targeted by query filters.",
+    )
+    query_list_parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
+    query_list_parser.add_argument(
+        "--type",
+        choices=["any", "transcript", "summary", "image_note"],
+        default="summary",
+        help="Restrict listing to one content type. Defaults to summaries.",
+    )
+    query_list_parser.add_argument(
+        "--date",
+        help="Restrict listing to sources whose filenames begin with YYMMDD, YYYYMMDD, or YYYY-MM-DD.",
+    )
+    query_list_parser.add_argument("--db-path", help="Override the database path.")
 
     profiles_parser = subparsers.add_parser(
         "profiles",
@@ -123,7 +151,10 @@ def run_command(command):
 
     print("Running:")
     print(" ".join(shlex.quote(part) for part in command), flush=True)
+    started = perf_counter()
     result = subprocess.run(command)
+    duration = perf_counter() - started
+    logger.info("Command completed in %.2fs: %s", duration, command)
     if result.returncode != 0:
         logger.error("Command failed with exit code %s: %s", result.returncode, command)
         raise RuntimeError(f"Command failed with exit code {result.returncode}")
@@ -142,17 +173,22 @@ def expected_transcript_paths(audio_path, transcripts_dir, transcript_output):
 
 
 def run_transcription(audio_path, transcripts_dir, transcript_output):
+    started = perf_counter()
     if transcript_output == "both":
         for output_type in ("json", "srt"):
             run_command(build_command(audio_path, transcripts_dir, output_type))
+        logger.info("Completed transcription outputs in %.2fs: %s", perf_counter() - started, audio_path)
         return
 
     run_command(build_command(audio_path, transcripts_dir, transcript_output))
+    logger.info("Completed transcription in %.2fs: %s", perf_counter() - started, audio_path)
 
 
 def write_summary(transcript_path, output_path, profile):
     print("[summary] Loading transcript...", flush=True)
+    started = perf_counter()
     transcript, transcript_source, transcript_lines = load_transcript(transcript_path)
+    logger.info("Loaded transcript for summarization in %.2fs: %s", perf_counter() - started, transcript_path)
 
     if not transcript.strip():
         raise ValueError("Transcript contains no usable text.")
@@ -190,6 +226,7 @@ def write_summary(transcript_path, output_path, profile):
 
     prompt = build_prompt(transcript, template_name)
     print("[summary] Generating summary...", flush=True)
+    started = perf_counter()
     summary, _, _ = generate_summary_markdown(
         transcript,
         profile["summary_backend"],
@@ -197,23 +234,44 @@ def write_summary(transcript_path, output_path, profile):
         transcript_lines,
         transcript_path,
     )
+    logger.info("Generated summary in %.2fs: %s", perf_counter() - started, transcript_path)
+    started = perf_counter()
     output_path.write_text(summary + "\n")
+    logger.info("Wrote summary file in %.2fs: %s", perf_counter() - started, output_path)
     print(f"[summary] Wrote {output_path}", flush=True)
 
 
 def query_collection(args, profile):
+    started = perf_counter()
     collection = get_collection(
         resolve_db_path(profile, args.db_path),
         profile["database"]["collection"],
     )
     query_type = args.type or profile["query"]["type"]
+    sources = list_indexed_sources(collection, query_type, getattr(args, "date", None))
+    selected_source = resolve_selected_source(args, sources)
     result_count = args.results or profile["query"]["results"]
-    where = None if query_type == "any" else {"content_type": query_type}
+    if (args.date or args.source or args.source_name) and not sources:
+        print("No indexed sources matched the current query filters.")
+        return 1
 
+    source_scope = [selected_source] if selected_source else (sources if args.date else None)
+    where = build_query_where(query_type, source_scope)
+
+    embed_started = perf_counter()
+    query_embedding = embed_text(args.question, profile["embedding_backend"])
+    logger.info("Computed query embedding in %.2fs", perf_counter() - embed_started)
+
+    retrieval_started = perf_counter()
     results = collection.query(
-        query_embeddings=[embed_text(args.question, profile["embedding_backend"])],
+        query_embeddings=[query_embedding],
         n_results=result_count,
         where=where,
+    )
+    logger.info(
+        "Retrieved query candidates in %.2fs (%s sources in scope)",
+        perf_counter() - retrieval_started,
+        len(source_scope) if source_scope is not None else "all",
     )
 
     docs = results.get("documents", [[]])[0]
@@ -239,7 +297,167 @@ Indexed excerpts:
 {context}
 """.strip()
 
+    answer_started = perf_counter()
     print(generate_text(prompt, profile["query_backend"]))
+    logger.info(
+        "Generated final query answer in %.2fs (total query time %.2fs)",
+        perf_counter() - answer_started,
+        perf_counter() - started,
+    )
+    return 0
+
+
+def normalize_source_date(value):
+    if not value:
+        return None
+
+    value = value.strip()
+
+    for fmt in ("%Y-%m-%d", "%Y%m%d", "%y%m%d"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    raise ValueError(
+        "Date filter must be in YYYY-MM-DD, YYYYMMDD, or YYMMDD format."
+    )
+
+
+def infer_source_date(source_name):
+    match = SOURCE_DATE_RE.match(source_name)
+    if not match:
+        return None
+
+    stamp = match.group("stamp")
+    fmt = "%y%m%d" if len(stamp) == 6 else "%Y%m%d"
+    try:
+        return datetime.strptime(stamp, fmt).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def matches_date_filter(source_name, normalized_date):
+    if not normalized_date:
+        return True
+    return infer_source_date(source_name) == normalized_date
+
+
+def dedupe_sources(metadatas):
+    sources = {}
+
+    for meta in metadatas:
+        source_path = meta.get("source_path")
+        source_name = meta.get("source_name")
+        content_type = meta.get("content_type")
+        if not source_path or not source_name or not content_type:
+            continue
+
+        key = (source_path, content_type)
+        if key in sources:
+            continue
+
+        sources[key] = {
+            "source_path": source_path,
+            "source_name": source_name,
+            "content_type": content_type,
+            "source_date": infer_source_date(source_name),
+        }
+
+    return list(sources.values())
+
+
+def source_sort_key(source):
+    return (
+        source.get("source_date") or "0000-00-00",
+        source["source_name"],
+        source["content_type"],
+    )
+
+
+def list_indexed_sources(collection, query_type, date_filter=None):
+    normalized_date = normalize_source_date(date_filter) if date_filter else None
+    where = None if query_type == "any" else {"content_type": query_type}
+    try:
+        results = collection.get(where=where, include=["metadatas"])
+    except TypeError:
+        results = collection.get(where=where)
+
+    metadatas = results.get("metadatas") or []
+    sources = [
+        source
+        for source in dedupe_sources(metadatas)
+        if matches_date_filter(source["source_name"], normalized_date)
+    ]
+    sources.sort(key=source_sort_key)
+
+    for index, source in enumerate(sources, start=1):
+        source["index"] = index
+
+    return sources
+
+
+def resolve_selected_source(args, sources):
+    if args.source and args.source_name:
+        raise ValueError("Use only one of --source or --source-name.")
+
+    if args.source_name:
+        for source in sources:
+            if source["source_name"] == args.source_name:
+                return source
+        raise ValueError(f"No indexed source matched --source-name {args.source_name!r}.")
+
+    if args.source is None:
+        return None
+
+    if args.source < 1 or args.source > len(sources):
+        raise ValueError(
+            f"--source must be between 1 and {len(sources)} for the current filter set."
+        )
+
+    return sources[args.source - 1]
+
+
+def build_query_where(query_type, selected_sources=None):
+    clauses = []
+
+    if query_type != "any":
+        clauses.append({"content_type": query_type})
+
+    if selected_sources:
+        source_path_clauses = [{"source_path": source["source_path"]} for source in selected_sources]
+        if len(source_path_clauses) == 1:
+            clauses.append(source_path_clauses[0])
+        else:
+            clauses.append({"$or": source_path_clauses})
+
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
+def list_query_sources(args, profile):
+    started = perf_counter()
+    collection = get_collection(
+        resolve_db_path(profile, args.db_path),
+        profile["database"]["collection"],
+    )
+    sources = list_indexed_sources(collection, args.type, args.date)
+
+    if not sources:
+        print("No indexed sources matched the current filters.")
+        return 1
+
+    for source in sources:
+        date_label = source["source_date"] or "unknown-date"
+        print(
+            f"{source['index']:>3}. [{source['content_type']}] {date_label} {source['source_name']}"
+        )
+
+    logger.info("Listed %s indexed sources in %.2fs", len(sources), perf_counter() - started)
+
     return 0
 
 
@@ -266,6 +484,7 @@ def expand_audio_inputs(audio_inputs):
 
 
 def run_audio_file(args, profile, audio_path):
+    file_started = perf_counter()
     ensure_exists(audio_path, "Audio file")
 
     transcript_output = args.transcript_output or profile["audio"]["transcript_output"]
@@ -295,7 +514,9 @@ def run_audio_file(args, profile, audio_path):
         if any(path.exists() for path in required_transcript_paths) and overwrite_transcript:
             print(f"[audio] Overwriting transcript outputs for {audio_path.name}", flush=True)
         print("[audio] Unloading Ollama models before WhisperX...", flush=True)
+        started = perf_counter()
         unload_profile_ollama_models(profile)
+        logger.info("Unloaded Ollama models in %.2fs before transcription", perf_counter() - started)
         run_transcription(audio_path, transcripts_dir, transcript_output)
         ensure_exists(transcript_path, "Transcript JSON")
         for path in required_transcript_paths:
@@ -317,10 +538,16 @@ def run_audio_file(args, profile, audio_path):
     )
 
     if index_mode in {"transcript", "both"}:
+        started = perf_counter()
         index_transcript_file(collection, transcript_path, profile["embedding_backend"])
+        logger.info("Indexed transcript in %.2fs: %s", perf_counter() - started, transcript_path)
 
     if index_mode in {"summary", "both"}:
+        started = perf_counter()
         index_markdown_file(collection, summary_path, "summary", profile["embedding_backend"])
+        logger.info("Indexed summary in %.2fs: %s", perf_counter() - started, summary_path)
+
+    logger.info("Completed audio pipeline in %.2fs: %s", perf_counter() - file_started, audio_path)
 
     return 0
 
@@ -343,6 +570,7 @@ def run_audio_pipeline(args, profile):
 
 
 def run_image_pipeline(args, profile):
+    started = perf_counter()
     image_path = Path(args.image_file).expanduser().resolve()
     ensure_exists(image_path, "Image file")
 
@@ -353,7 +581,9 @@ def run_image_pipeline(args, profile):
     )
 
     print(f"[image] Processing {image_path}", flush=True)
+    ocr_started = perf_counter()
     note = extract_note(image_path, profile["vision_backend"])
+    logger.info("Completed OCR in %.2fs: %s", perf_counter() - ocr_started, image_path)
 
     note_path = note_markdown_path(image_path, notes_dir)
     note_path.write_text(note + "\n")
@@ -366,7 +596,10 @@ def run_image_pipeline(args, profile):
         resolve_db_path(profile, args.db_path),
         profile["database"]["collection"],
     )
+    index_started = perf_counter()
     index_markdown_file(collection, note_path, "image_note", profile["embedding_backend"])
+    logger.info("Indexed image note in %.2fs: %s", perf_counter() - index_started, note_path)
+    logger.info("Completed image pipeline in %.2fs: %s", perf_counter() - started, image_path)
     return 0
 
 
@@ -402,6 +635,8 @@ def main():
             return run_image_pipeline(args, profile)
         if args.command == "query":
             return query_collection(args, profile)
+        if args.command == "query-list":
+            return list_query_sources(args, profile)
     except (FileNotFoundError, RuntimeError, ValueError, requests.RequestException) as exc:
         logger.exception("Top-level noterizer failure")
         print(f"Error: {exc}", file=sys.stderr)

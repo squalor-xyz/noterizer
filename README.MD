@@ -73,6 +73,14 @@ Query everything together:
 python3 noterizer.py query "What action items were discussed?"
 ```
 
+List indexed summaries before narrowing a query:
+
+```bash
+python3 noterizer.py query-list
+python3 noterizer.py query-list --type summary --date 2026-05-13
+python3 noterizer.py query --type summary --source 2 "What were the main topics?"
+```
+
 Filter query to summaries only:
 
 ```bash
@@ -116,6 +124,14 @@ Override the summary template explicitly:
 ```bash
 python3 noterizer.py audio input.mp3 --summary-format meeting
 python3 noterizer.py audio input.mp3 --summary-format presentation
+```
+
+Control rerun behavior explicitly:
+
+```bash
+python3 noterizer.py audio input.mp3 --overwrite
+python3 noterizer.py audio input.mp3 --overwrite summary
+python3 noterizer.py audio input.mp3 --overwrite none
 ```
 
 ## Database Model
@@ -176,8 +192,9 @@ They share the same profile model and database defaults as `noterizer.py`. Use t
 - Setup: [docs/setup.md](./docs/setup.md)
 - Usage: [docs/usage.md](./docs/usage.md)
 - Profiles: [docs/profiles.md](./docs/profiles.md)
+- Roadmap: [docs/roadmap.md](./docs/roadmap.md)
 
 ## Logging
 
 Pipeline scripts write errors to a shared rotating log at `./noterizer.log`.
-Use `--log-level INFO` when you want more detail in that file.
+Use `--log-level INFO` when you want more detail in that file, including per-step timing data for transcription, summarization, indexing, OCR, and query.
