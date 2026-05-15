@@ -1,5 +1,7 @@
 # Noterizer
 
+Local-first audio transcription, structured summarization, OCR note capture, and semantic recall.
+
 Local-first pipeline for:
 
 - audio transcription with WhisperX
