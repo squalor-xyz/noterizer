@@ -24,6 +24,9 @@ DEFAULT_PROFILE = {
             "temperature": 0.1,
         },
     },
+    "summary": {
+        "format": "auto",
+    },
     "query_backend": {
         "kind": "ollama_generate",
         "url": "http://localhost:11434/api/generate",

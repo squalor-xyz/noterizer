@@ -3,6 +3,7 @@
 Profiles are JSON files that define:
 
 - summary backend
+- summary defaults such as summary format
 - query backend
 - embedding backend
 - vision backend
@@ -68,6 +69,9 @@ Vision:
   "database": {
     "path": "./noterizer_db"
   },
+  "summary": {
+    "format": "auto"
+  },
   "summary_backend": {
     "kind": "openai_chat_completions",
     "url": "http://localhost:8000/v1/chat/completions",
@@ -92,6 +96,19 @@ Vision:
     "model": "my-vision-model"
   }
 }
+```
+
+`summary.format` supports:
+
+- `auto`: detect `meeting` vs `presentation`
+- `meeting`: use the meeting/work-session template
+- `presentation`: use the keynote/demo/presentation template
+
+CLI flags can override the profile default:
+
+```bash
+python3 noterizer.py audio input.mp3 --summary-format presentation
+python3 summarize_transcript.py transcripts/input.json --summary-format meeting
 ```
 
 Use it with:

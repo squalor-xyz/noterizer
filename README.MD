@@ -56,6 +56,7 @@ python3 noterizer.py audio /path/to/input.mp3
 ```
 
 By default, the main audio pipeline keeps both transcript JSON and SRT outputs.
+It also defaults to `summary.format: auto`, which tries to pick a meeting-style or presentation-style summary template based on the transcript.
 
 Image OCR:
 
@@ -105,6 +106,13 @@ Use a custom local profile file:
 
 ```bash
 python3 noterizer.py audio input.mp3 --profile ./profiles/my-stack.local.json
+```
+
+Override the summary template explicitly:
+
+```bash
+python3 noterizer.py audio input.mp3 --summary-format meeting
+python3 noterizer.py audio input.mp3 --summary-format presentation
 ```
 
 ## Database Model

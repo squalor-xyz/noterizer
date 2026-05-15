@@ -8,7 +8,7 @@ from pathlib import Path
 import requests
 
 from run_whisperx import build_command
-from summarize_transcript import build_prompt, generate_summary_markdown, load_transcript
+from summarize_transcript import build_prompt, generate_summary_markdown, load_transcript, resolve_summary_format
 
 from noterizer_core import (
     add_log_level_arg,
@@ -76,6 +76,12 @@ def parse_args():
         help="Overwrite existing outputs. Transcript overwrite also regenerates the summary.",
     )
     audio_parser.add_argument("--db-path", help="Override the database path.")
+    audio_parser.add_argument(
+        "--summary-format",
+        choices=["auto", "meeting", "presentation"],
+        default=None,
+        help="Summary template to use. Defaults to the active profile, with auto-detection supported.",
+    )
 
     image_parser = subparsers.add_parser(
         "image",
@@ -146,14 +152,51 @@ def run_transcription(audio_path, transcripts_dir, transcript_output):
 
 def write_summary(transcript_path, output_path, profile):
     print("[summary] Loading transcript...", flush=True)
-    transcript = load_transcript(transcript_path)
+    transcript, transcript_source, transcript_lines = load_transcript(transcript_path)
 
     if not transcript.strip():
         raise ValueError("Transcript contains no usable text.")
 
-    prompt = build_prompt(transcript)
+    if transcript_source == "srt":
+        transcript_source_path = transcript_path.with_suffix(".srt")
+        logger.info("Using transcript source for summarization: srt (%s)", transcript_source_path)
+        print(
+            f"[summary] Using transcript source for summarization: srt ({transcript_source_path})",
+            flush=True,
+        )
+    else:
+        logger.info("Using transcript source for summarization: json (%s)", transcript_path)
+        print(
+            f"[summary] Using transcript source for summarization: json ({transcript_path})",
+            flush=True,
+        )
+
+    requested_format = profile["summary"]["format"]
+    template_name, detected = resolve_summary_format(
+        requested_format,
+        transcript_lines,
+        transcript_path,
+    )
+    logger.info(
+        "Using summary format %s (%s)",
+        template_name,
+        "auto-detected" if detected else "explicit/profile default",
+    )
+    print(
+        f"[summary] Using summary format: {template_name}"
+        + (" (auto-detected)" if detected else ""),
+        flush=True,
+    )
+
+    prompt = build_prompt(transcript, template_name)
     print("[summary] Generating summary...", flush=True)
-    summary = generate_summary_markdown(transcript, profile["summary_backend"])
+    summary, _, _ = generate_summary_markdown(
+        transcript,
+        profile["summary_backend"],
+        requested_format,
+        transcript_lines,
+        transcript_path,
+    )
     output_path.write_text(summary + "\n")
     print(f"[summary] Wrote {output_path}", flush=True)
 
@@ -243,6 +286,8 @@ def run_audio_file(args, profile, audio_path):
     summary_path = summary_markdown_path(audio_path, summaries_dir)
     overwrite_transcript = args.overwrite in {"transcript", "both"}
     overwrite_summary = args.overwrite in {"summary", "both"} or overwrite_transcript
+    if args.summary_format:
+        profile = {**profile, "summary": {**profile["summary"], "format": args.summary_format}}
 
     if all(path.exists() for path in required_transcript_paths) and not overwrite_transcript:
         print(f"[audio] Reusing transcript {transcript_path}", flush=True)

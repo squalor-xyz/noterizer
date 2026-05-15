@@ -19,28 +19,88 @@ Known terminology:
 - RVTM = Requirements Verification and Traceability Matrix.
 """.strip()
 
-REQUIRED_HEADINGS = [
-    "# Executive Summary",
-    "# Key Facts",
-    "# Main Topics Discussed",
-    "# Technical Details",
-    "# Architecture / System Ideas",
-    "# Business / Product Details",
-    "# Constraints / Risks / Concerns",
-    "# Action Items",
-    "# Decisions Made",
-    "# Open Questions",
-    "# Ambiguous / Unverified Terms",
-    "# People Mentioned",
-    "# Chronological Timeline",
-    "# Important Quotes",
-    "# Next Steps",
-]
+SUMMARY_TEMPLATES = {
+    "meeting": {
+        "headings": [
+            "# Executive Summary",
+            "# Key Facts",
+            "# Main Topics Discussed",
+            "# Technical Details",
+            "# Architecture / System Ideas",
+            "# Business / Product Details",
+            "# Constraints / Risks / Concerns",
+            "# Action Items",
+            "# Decisions Made",
+            "# Open Questions",
+            "# Ambiguous / Unverified Terms",
+            "# People Mentioned",
+            "# Chronological Timeline",
+            "# Important Quotes",
+            "# Next Steps",
+        ],
+        "section_requirements": [
+            "- `# Executive Summary`: 3-5 bullets max.",
+            "- `# Key Facts`: concrete facts only.",
+            "- `# Main Topics Discussed`: specific topics, not generic labels.",
+            "- `# Technical Details`: exact implementation and workflow details.",
+            "- `# Architecture / System Ideas`: system structure, boundaries, integrations, data flow.",
+            "- `# Business / Product Details`: only if actually discussed.",
+            "- `# Constraints / Risks / Concerns`: include technical and process risks.",
+            "- `# Action Items`: include only explicit tasks, requests, or follow-ups. If no clear task exists, write `- None stated.`",
+            "- `# Decisions Made`: explicit decisions only. Do not include proposals, open ideas, or \"should\" statements.",
+            "- `# Open Questions`: unresolved questions only.",
+            "- `# Ambiguous / Unverified Terms`: unclear terms, possible transcription errors, unexpanded acronyms.",
+            "- `# People Mentioned`: names or speaker references only if useful. Do not infer real identities from speaker labels.",
+            "- `# Chronological Timeline`: short timeline bullets with timestamps when useful.",
+            "- `# Important Quotes`: only unusually precise or important statements.",
+            "- `# Next Steps`: explicit next steps only. Do not infer likely next steps from discussion context.",
+        ],
+        "content_rules": [
+            "- Do not upgrade suggestions, proposals, or ideas into decisions or commitments.",
+            "- Do not invent action items or next steps that were not explicitly assigned, requested, or agreed.",
+        ],
+    },
+    "presentation": {
+        "headings": [
+            "# Executive Summary",
+            "# Core Themes",
+            "# Products / Features Shown",
+            "# Technical Details",
+            "# Demonstrations / Examples",
+            "# Announcements / Claims",
+            "# Risks / Caveats",
+            "# Open Questions / Ambiguities",
+            "# People Mentioned",
+            "# Chronological Timeline",
+            "# Important Quotes",
+        ],
+        "section_requirements": [
+            "- `# Executive Summary`: 3-5 bullets max.",
+            "- `# Core Themes`: main themes or messages from the presentation.",
+            "- `# Products / Features Shown`: products, capabilities, or features demonstrated or described.",
+            "- `# Technical Details`: exact technical facts, specs, integrations, protocols, models, workflows, and constraints.",
+            "- `# Demonstrations / Examples`: concrete demos, walkthroughs, comparisons, or illustrative examples shown.",
+            "- `# Announcements / Claims`: roadmap statements, claims, or positioning presented by the speakers. Treat these as presented claims, not verified facts.",
+            "- `# Risks / Caveats`: limitations, cautions, tradeoffs, or uncertainty if actually mentioned.",
+            "- `# Open Questions / Ambiguities`: unclear terms, possible transcription issues, unresolved questions, or ambiguous claims.",
+            "- `# People Mentioned`: names or speaker references only if useful. Do not infer real identities from speaker labels.",
+            "- `# Chronological Timeline`: major beats of the presentation with timestamps when useful.",
+            "- `# Important Quotes`: unusually precise or important statements only.",
+        ],
+        "content_rules": [
+        "- Do not force meeting-style sections such as action items, decisions, or next steps into presentation summaries.",
+            "- Do not invent commitments, follow-ups, or tasks unless the presentation explicitly includes them.",
+            "- Prefer products, demos, claims, and technical points over conversational process notes.",
+        ],
+    },
+}
 
-CHUNK_NOTE_HEADINGS = REQUIRED_HEADINGS[1:]
+REQUIRED_HEADINGS = SUMMARY_TEMPLATES["meeting"]["headings"]
 CHUNK_TARGET_CHARS = 8000
 DIRECT_SUMMARY_MAX_CHARS = 12000
 LONG_TRANSCRIPT_MIN_LINES = 120
+SRT_PREFERENCE_RATIO = 0.8
+SUMMARY_FORMAT_CHOICES = ["auto", "meeting", "presentation"]
 
 CLOSING_PHRASES = {
     "thank you",
@@ -102,8 +162,77 @@ def load_transcript_lines(path):
     return lines
 
 
+def parse_srt_timestamp(value):
+    parts = re.split(r"[:,]", value.strip())
+    if len(parts) != 4:
+        return 0.0
+    hours, minutes, seconds, millis = (int(part) for part in parts)
+    return hours * 3600 + minutes * 60 + seconds + millis / 1000
+
+
+def load_srt_lines(path):
+    text = Path(path).read_text()
+    blocks = re.split(r"\n\s*\n", text.strip())
+    lines = []
+
+    for block in blocks:
+        block_lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if len(block_lines) < 2:
+            continue
+
+        time_line = block_lines[1] if "-->" in block_lines[1] else block_lines[0]
+        if "-->" not in time_line:
+            continue
+
+        start_text, end_text = [part.strip() for part in time_line.split("-->", 1)]
+        start = parse_srt_timestamp(start_text)
+        end = parse_srt_timestamp(end_text)
+        content_lines = block_lines[2:] if time_line == block_lines[1] else block_lines[1:]
+        content = " ".join(content_lines).strip()
+
+        if content and not is_trivial_closing_segment(content):
+            lines.append(f"[{start:.1f}-{end:.1f}] {content}")
+
+    return lines
+
+
+def choose_summary_lines(path):
+    json_lines = load_transcript_lines(path)
+    srt_path = Path(path).with_suffix(".srt")
+
+    if not srt_path.exists():
+        return json_lines, "json"
+
+    srt_lines = load_srt_lines(srt_path)
+    if not srt_lines:
+        return json_lines, "json"
+
+    if len(srt_lines) < len(json_lines) * SRT_PREFERENCE_RATIO:
+        logger.info(
+            "Using shorter sibling SRT for summarization: %s instead of %s",
+            srt_path,
+            path,
+        )
+        return srt_lines, "srt"
+
+    return json_lines, "json"
+
+
 def load_transcript(path):
-    return "\n".join(load_transcript_lines(path))
+    lines, source_kind = choose_summary_lines(path)
+    return "\n".join(lines), source_kind, lines
+
+
+def get_template(template_name):
+    return SUMMARY_TEMPLATES[template_name]
+
+
+def template_headings(template_name):
+    return get_template(template_name)["headings"]
+
+
+def chunk_note_headings(template_name):
+    return template_headings(template_name)[1:]
 
 
 def extract_line_text(line):
@@ -134,6 +263,57 @@ def is_low_information_line(line):
         return True
 
     return False
+
+
+def detect_summary_format(transcript_lines, transcript_path=None):
+    path_text = ""
+    if transcript_path is not None:
+        path_text = str(Path(transcript_path).stem).lower()
+
+    hint_terms = ("keynote", "presentation", "demo", "session", "webinar", "conference", "ni-connect")
+    if any(term in path_text for term in hint_terms):
+        return "presentation"
+
+    speakers = [extract_line_speaker(line) for line in transcript_lines if extract_line_speaker(line) != "UNKNOWN"]
+    unique_speakers = set(speakers)
+    speaker_switches = sum(1 for left, right in zip(speakers, speakers[1:]) if left != right)
+
+    transcript_text = " ".join(extract_line_text(line).lower() for line in transcript_lines[:120])
+    presentation_markers = sum(
+        marker in transcript_text
+        for marker in (
+            "today",
+            "demo",
+            "let me show",
+            "on stage",
+            "thank you all",
+            "joining us",
+            "welcome",
+            "session",
+            "keynote",
+        )
+    )
+    meeting_markers = sum(
+        marker in transcript_text
+        for marker in (
+            "next meeting",
+            "follow up",
+            "let me ask",
+            "we need to",
+            "what do you think",
+            "action item",
+            "issue",
+            "requirements",
+        )
+    )
+
+    if len(unique_speakers) <= 2 and speaker_switches <= max(4, len(speakers) // 10):
+        return "presentation"
+
+    if presentation_markers >= 2 and meeting_markers == 0:
+        return "presentation"
+
+    return "meeting"
 
 
 def filter_long_transcript_lines(lines):
@@ -224,7 +404,8 @@ def trim_low_information_tail_chunks(chunk_groups):
     return trimmed
 
 
-def build_prompt(transcript):
+def build_prompt(transcript, template_name):
+    template = get_template(template_name)
     return f"""
 Generate durable reference notes from this transcript.
 
@@ -246,8 +427,7 @@ Content rules:
 - Do not infer relationships, ownership, intent, company names, or acronym expansions unless explicitly stated.
 - Do not use generic summary phrases like "the discussion revolves around", "moving forward", or "in summary".
 - Do not add narrative filler, conclusions, or assistant-style language.
-- Do not upgrade suggestions, proposals, or ideas into decisions or commitments.
-- Do not invent action items or next steps that were not explicitly assigned, requested, or agreed.
+{chr(10).join(template["content_rules"])}
 - Never mention chunk numbers, chunk boundaries, or intermediate processing in the final output.
 - In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not include tool names, product names, or inferred identities.
 
@@ -260,24 +440,10 @@ Terminology rules:
 - If a term may be mis-transcribed or unclear, list it under `# Ambiguous / Unverified Terms`.
 
 Section requirements:
-- `# Executive Summary`: 3-5 bullets max.
-- `# Key Facts`: concrete facts only.
-- `# Main Topics Discussed`: specific topics, not generic labels.
-- `# Technical Details`: exact implementation and workflow details.
-- `# Architecture / System Ideas`: system structure, boundaries, integrations, data flow.
-- `# Business / Product Details`: only if actually discussed.
-- `# Constraints / Risks / Concerns`: include technical and process risks.
-- `# Action Items`: include only explicit tasks, requests, or follow-ups. If no clear task exists, write `- None stated.`
-- `# Decisions Made`: explicit decisions only. Do not include proposals, open ideas, or "should" statements.
-- `# Open Questions`: unresolved questions only.
-- `# Ambiguous / Unverified Terms`: unclear terms, possible transcription errors, unexpanded acronyms.
-- `# People Mentioned`: names or speaker references only if useful. Do not infer real identities from speaker labels.
-- `# Chronological Timeline`: short timeline bullets with timestamps when useful.
-- `# Important Quotes`: only unusually precise or important statements.
-- `# Next Steps`: explicit next steps only. Do not infer likely next steps from discussion context.
+{chr(10).join(template["section_requirements"])}
 
 Required headings:
-{chr(10).join(REQUIRED_HEADINGS)}
+{chr(10).join(template["headings"])}
 
 Transcript:
 
@@ -285,7 +451,8 @@ Transcript:
 """.strip()
 
 
-def build_chunk_prompt(chunk_text, chunk_index, total_chunks):
+def build_chunk_prompt(chunk_text, chunk_index, total_chunks, template_name):
+    template = get_template(template_name)
     return f"""
 Generate dense extraction notes for transcript chunk {chunk_index} of {total_chunks}.
 
@@ -298,17 +465,15 @@ Output rules:
 - If a section has nothing useful, write `- None stated.`
 - Preserve exact facts, names, acronyms, values, timestamps, workflows, constraints, and quotes from this chunk only.
 - Do not guess meanings or relationships.
-- For `# Action Items`, include only explicit tasks, requests, or follow-ups from this chunk.
-- For `# Decisions Made`, include only explicit decisions from this chunk.
-- For `# Next Steps`, include only explicit next steps from this chunk.
 - For `# People Mentioned`, include only actual people explicitly named or speaker labels from this chunk.
 - Do not mention chunk numbers or chunk boundaries inside the section content.
+{chr(10).join(template["content_rules"])}
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
 
 Required headings:
-{chr(10).join(CHUNK_NOTE_HEADINGS)}
+{chr(10).join(chunk_note_headings(template_name))}
 
 Transcript chunk {chunk_index}/{total_chunks}:
 
@@ -316,7 +481,8 @@ Transcript chunk {chunk_index}/{total_chunks}:
 """.strip()
 
 
-def build_merge_prompt(chunk_notes):
+def build_merge_prompt(chunk_notes, template_name):
+    template = get_template(template_name)
     joined_notes = "\n\n".join(
         f"## Chunk {index}\n{notes}" for index, notes in enumerate(chunk_notes, start=1)
     )
@@ -333,9 +499,7 @@ Output rules:
 - Preserve concrete details from the chunk notes. Do not invent facts that are not present in the notes.
 - Never mention chunk numbers, chunk ranges, or phrases like "in chunk 3" in the final summary.
 - Remove any intermediate-processing references from the final output.
-- For `# Decisions Made`, keep only explicit decisions. Drop proposals, ideas, or suggestions.
-- For `# Action Items`, keep only explicit tasks, requests, or follow-ups.
-- For `# Next Steps`, keep only explicit next steps. Do not infer likely future work.
+{chr(10).join(template["content_rules"])}
 - For `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities from speaker labels and do not include tools or products.
 - For `# Ambiguous / Unverified Terms`, prefer raw transcript terms over guessed expansions unless the Domain glossary explicitly defines them.
 - When uncertain whether something is a decision or action item, omit it or place it under `# Open Questions` or `# Main Topics Discussed`.
@@ -344,7 +508,7 @@ Domain glossary:
 {DOMAIN_GLOSSARY}
 
 Required headings:
-{chr(10).join(REQUIRED_HEADINGS)}
+{chr(10).join(template["headings"])}
 
 Chunk notes:
 
@@ -352,15 +516,30 @@ Chunk notes:
 """.strip()
 
 
-def validate_summary(summary):
+def validate_summary(summary, template_name=None):
+    candidate_templates = [template_name] if template_name else list(SUMMARY_TEMPLATES)
+    best_errors = None
+
+    for candidate in candidate_templates:
+        errors = validate_summary_against_template(summary, candidate)
+        if not errors:
+            return []
+        if best_errors is None or len(errors) < len(best_errors):
+            best_errors = errors
+
+    return best_errors or []
+
+
+def validate_summary_against_template(summary, template_name):
+    required_headings = template_headings(template_name)
     errors = []
     stripped = summary.strip()
 
-    if not stripped.startswith(REQUIRED_HEADINGS[0]):
-        errors.append("summary does not start with '# Executive Summary'")
+    if not stripped.startswith(required_headings[0]):
+        errors.append(f"summary does not start with '{required_headings[0]}'")
 
     positions = []
-    for heading in REQUIRED_HEADINGS:
+    for heading in required_headings:
         index = stripped.find(heading)
         if index == -1:
             errors.append(f"missing required heading: {heading}")
@@ -371,45 +550,19 @@ def validate_summary(summary):
         errors.append("required headings are out of order")
 
     heading_count = sum(1 for line in stripped.splitlines() if line.startswith("# "))
-    if heading_count < len(REQUIRED_HEADINGS):
+    if heading_count < len(required_headings):
         errors.append("summary contains too few section headings")
 
     first_nonempty = next((line.strip() for line in stripped.splitlines() if line.strip()), "")
-    if first_nonempty and first_nonempty != REQUIRED_HEADINGS[0]:
+    if first_nonempty and first_nonempty != required_headings[0]:
         errors.append("summary begins with prose instead of the required heading")
-
-    section_map = {}
-    current_heading = None
-    current_lines = []
-
-    for line in stripped.splitlines():
-        if line.startswith("# "):
-            if current_heading is not None:
-                section_map[current_heading] = current_lines
-            current_heading = line.strip()
-            current_lines = []
-            continue
-
-        if current_heading is not None:
-            current_lines.append(line.rstrip())
-
-    if current_heading is not None:
-        section_map[current_heading] = current_lines
-
-    for heading in REQUIRED_HEADINGS:
-        section_lines = section_map.get(heading)
-        if section_lines is None:
-            continue
-
-        if not any(line.strip() for line in section_lines):
-            errors.append(f"section is empty: {heading}")
 
     return errors
 
 
-def build_repair_prompt(invalid_summary, errors):
+def build_repair_prompt(invalid_summary, errors, template_name):
     error_list = "\n".join(f"- {error}" for error in errors)
-    headings = "\n".join(REQUIRED_HEADINGS)
+    headings = "\n".join(template_headings(template_name))
     return f"""
 Rewrite the invalid summary below so it strictly follows the required format.
 
@@ -435,7 +588,7 @@ Invalid summary:
 """.strip()
 
 
-def build_notes_recovery_prompt(chunk_notes, errors):
+def build_notes_recovery_prompt(chunk_notes, errors, template_name):
     error_list = "\n".join(f"- {error}" for error in errors)
     joined_notes = "\n\n".join(
         f"## Chunk {index}\n{notes}" for index, notes in enumerate(chunk_notes, start=1)
@@ -453,7 +606,7 @@ Do not invent action items or next steps that are not explicit in the chunk note
 In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities and do not include tools or products.
 In `# Ambiguous / Unverified Terms`, keep raw terms unless the Domain glossary explicitly defines the meaning.
 Use these exact headings in this exact order:
-{chr(10).join(REQUIRED_HEADINGS)}
+{chr(10).join(template_headings(template_name))}
 
 Previous merged summary failed validation for these reasons:
 {error_list}
@@ -464,7 +617,7 @@ Chunk notes:
 """.strip()
 
 
-def summarize_chunk_notes(chunks, backend):
+def summarize_chunk_notes(chunks, backend, template_name):
     notes = []
 
     retained_chunks = [chunk for chunk in chunks if not is_low_information_chunk_lines(chunk)]
@@ -475,66 +628,78 @@ def summarize_chunk_notes(chunks, backend):
     for index, chunk_lines in enumerate(retained_chunks, start=1):
         chunk_text = "\n".join(chunk_lines)
         print(f"[summary] Summarizing chunk {index}/{len(retained_chunks)}...", flush=True)
-        notes.append(generate_text(build_chunk_prompt(chunk_text, index, len(retained_chunks)), backend))
+        notes.append(generate_text(build_chunk_prompt(chunk_text, index, len(retained_chunks), template_name), backend))
 
     return notes
 
 
-def generate_chunked_summary(transcript, backend):
+def generate_chunked_summary(transcript, backend, template_name):
     lines = filter_long_transcript_lines(transcript.splitlines())
     chunk_groups = chunk_transcript_line_groups(lines)
     chunk_groups = trim_low_information_tail_chunks(chunk_groups)
-    chunk_notes = summarize_chunk_notes(chunk_groups, backend)
-    merged_summary = generate_text(build_merge_prompt(chunk_notes), backend)
+    chunk_notes = summarize_chunk_notes(chunk_groups, backend, template_name)
+    merged_summary = generate_text(build_merge_prompt(chunk_notes, template_name), backend)
     return merged_summary, chunk_notes
 
 
-def try_repair_summary(invalid_summary, errors, backend):
+def try_repair_summary(invalid_summary, errors, backend, template_name):
     print("[summary] Validation failed. Retrying with repair prompt...", flush=True)
-    repaired_summary = generate_text(build_repair_prompt(invalid_summary, errors), backend)
-    return repaired_summary, validate_summary(repaired_summary)
+    repaired_summary = generate_text(build_repair_prompt(invalid_summary, errors, template_name), backend)
+    return repaired_summary, validate_summary(repaired_summary, template_name)
 
 
-def generate_summary_markdown(transcript, backend):
+def resolve_summary_format(requested_format, transcript_lines, transcript_path=None):
+    if requested_format == "auto":
+        return detect_summary_format(transcript_lines, transcript_path), True
+    return requested_format, False
+
+
+def generate_summary_markdown(transcript, backend, summary_format, transcript_lines, transcript_path=None):
+    template_name, detected = resolve_summary_format(summary_format, transcript_lines, transcript_path)
+    logger.info(
+        "Using summary format %s (%s)",
+        template_name,
+        "auto-detected" if detected else "explicit/profile default",
+    )
     chunk_notes = None
 
     if len(transcript) <= DIRECT_SUMMARY_MAX_CHARS:
-        summary = generate_text(build_prompt(transcript), backend)
+        summary = generate_text(build_prompt(transcript, template_name), backend)
     else:
         print("[summary] Using chunked summarization...", flush=True)
-        summary, chunk_notes = generate_chunked_summary(transcript, backend)
+        summary, chunk_notes = generate_chunked_summary(transcript, backend, template_name)
 
-    errors = validate_summary(summary)
+    errors = validate_summary(summary, template_name)
     if not errors:
-        return summary
+        return summary, template_name, detected
 
-    repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend)
+    repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
     if not repaired_errors:
-        return repaired_summary
+        return repaired_summary, template_name, detected
 
     if chunk_notes is None:
         print("[summary] Falling back to chunked summarization...", flush=True)
-        summary, chunk_notes = generate_chunked_summary(transcript, backend)
-        errors = validate_summary(summary)
+        summary, chunk_notes = generate_chunked_summary(transcript, backend, template_name)
+        errors = validate_summary(summary, template_name)
         if not errors:
-            return summary
+            return summary, template_name, detected
 
-        repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend)
+        repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
         if not repaired_errors:
-            return repaired_summary
+            return repaired_summary, template_name, detected
 
     print("[summary] Rebuilding final summary from chunk notes...", flush=True)
     recovered_summary = generate_text(
-        build_notes_recovery_prompt(chunk_notes, repaired_errors),
+        build_notes_recovery_prompt(chunk_notes, repaired_errors, template_name),
         backend,
     )
-    recovery_errors = validate_summary(recovered_summary)
+    recovery_errors = validate_summary(recovered_summary, template_name)
 
     if recovery_errors:
         joined_errors = "; ".join(recovery_errors)
         raise ValueError(f"Summary validation failed after recovery: {joined_errors}")
 
-    return recovered_summary
+    return recovered_summary, template_name, detected
 
 
 def parse_args():
@@ -543,6 +708,12 @@ def parse_args():
     parser.add_argument("transcript_json", help="Path to the transcript JSON file.")
     parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
     parser.add_argument("--output", help="Output markdown path. Defaults beside the transcript JSON.")
+    parser.add_argument(
+        "--summary-format",
+        choices=SUMMARY_FORMAT_CHOICES,
+        default=None,
+        help="Summary template to use. Defaults to the active profile, with auto-detection supported.",
+    )
     return parser.parse_args()
 
 
@@ -559,20 +730,56 @@ def main():
     profile = load_profile(args.profile)
 
     print("[0/4] Loading transcript...", flush=True)
-    transcript = load_transcript(transcript_path)
+    transcript, transcript_source, transcript_lines = load_transcript(transcript_path)
 
     if not transcript.strip():
         logger.error("Transcript contains no usable text: %s", transcript_path)
         print("Error: transcript contains no usable text.")
         return 1
 
+    if transcript_source == "srt":
+        transcript_source_path = transcript_path.with_suffix(".srt")
+        logger.info("Using transcript source for summarization: srt (%s)", transcript_source_path)
+        print(
+            f"[summary] Using transcript source for summarization: srt ({transcript_source_path})",
+            flush=True,
+        )
+    else:
+        logger.info("Using transcript source for summarization: json (%s)", transcript_path)
+        print(
+            f"[summary] Using transcript source for summarization: json ({transcript_path})",
+            flush=True,
+        )
+
     print(f"[0/4] Loaded transcript chars: {len(transcript):,}", flush=True)
-    prompt = build_prompt(transcript)
+    requested_format = args.summary_format or profile["summary"]["format"]
+    template_name, detected = resolve_summary_format(
+        requested_format,
+        transcript_lines,
+        transcript_path,
+    )
+    logger.info(
+        "Using summary format %s (%s)",
+        template_name,
+        "auto-detected" if detected else "explicit/profile default",
+    )
+    print(
+        f"[summary] Using summary format: {template_name}"
+        + (" (auto-detected)" if detected else ""),
+        flush=True,
+    )
+    prompt = build_prompt(transcript, template_name)
     print(f"[0/4] Prompt chars: {len(prompt):,}", flush=True)
     print("[1/4] Generating summary...", flush=True)
 
     try:
-        summary = generate_summary_markdown(transcript, profile["summary_backend"])
+        summary, _, _ = generate_summary_markdown(
+            transcript,
+            profile["summary_backend"],
+            requested_format,
+            transcript_lines,
+            transcript_path,
+        )
     except (ValueError, requests.RequestException) as exc:
         logger.exception("Summary generation failed for %s", transcript_path)
         print(f"Error: {exc}")

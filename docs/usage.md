@@ -22,6 +22,15 @@ python3 noterizer.py audio /path/to/input.mp3 --profile ollama-light
 python3 noterizer.py audio /path/to/input.mp3 --profile openai-compatible-local
 ```
 
+Summary format selection defaults to the active profile. The bundled default uses `auto`, which tries to detect whether a transcript is closer to a meeting or a presentation/keynote.
+
+Override it explicitly when needed:
+
+```bash
+python3 noterizer.py audio /path/to/input.mp3 --summary-format meeting
+python3 noterizer.py audio /path/to/input.mp3 --summary-format presentation
+```
+
 Custom output directories:
 
 ```bash
@@ -158,6 +167,7 @@ python3 run_whisperx.py input.mp3
 python3 run_whisperx.py input.mp3 --type srt
 python3 run_whisperx.py input.mp3 --type both
 python3 summarize_transcript.py transcripts/input.json
+python3 summarize_transcript.py transcripts/input.json --summary-format presentation
 python3 image_to_note.py note.jpg
 python3 index_transcript.py transcripts/input.json
 python3 ask_memory.py "What did we discuss?"
