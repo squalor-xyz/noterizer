@@ -24,3 +24,4 @@ First public release.
 
 - Best results currently come from local-first setups with Ollama and WhisperX
 - Summary quality is improved, but important outputs should still be skim-reviewed
+- Long/noisy recordings and domain-specific technical vocabulary remain the main summary-quality limitations

@@ -410,6 +410,31 @@ python3 noterizer.py audio /path/to/example.mp3 --summary-format presentation --
 
 - trim the source recording or the `.srt` if the tail contains noise
 
+### Domain-specific technical vocabulary comes out wrong
+
+Symptoms:
+
+- unusual engineering terms, acronyms, product names, or RF/test terminology are transcribed incorrectly
+- the summary then repeats those bad terms as if they were real facts
+
+Why this happens:
+
+- WhisperX does not know every domain-specific term in your environment
+- the summary model may treat a bad transcript token as if it were a legitimate technical term
+
+Where this is most likely:
+
+- conference talks
+- RF/test-measurement presentations
+- recordings with many uncommon product names, acronyms, or internal jargon
+
+What helps:
+
+- trim noisy tails before summarization
+- keep a cleaner edited sibling `.srt` when possible
+- use human skim review for important outputs
+- treat unusual technical terms in summaries as suspect unless they match known vocabulary
+
 ### Transcript seems noisy after the real content ended
 
 Symptoms:

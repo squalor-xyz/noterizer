@@ -198,3 +198,10 @@ They share the same profile model and database defaults as `noterizer.py`. Use t
 
 Pipeline scripts write errors to a shared rotating log at `./noterizer.log`.
 Use `--log-level INFO` when you want more detail in that file, including per-step timing data for transcription, summarization, indexing, OCR, and query.
+
+## Current Limitations
+
+- Human skim review is still recommended for important summaries.
+- Long or noisy recordings can degrade summary quality, especially when the recording continues after the real meeting or talk has ended.
+- Domain-specific technical vocabulary can still be mis-transcribed by WhisperX and then misinterpreted by the summary model.
+- Conference/keynote-style recordings with uncommon RF or engineering terminology are currently the highest-risk case.
