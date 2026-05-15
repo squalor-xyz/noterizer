@@ -125,6 +125,26 @@ CLOSING_PHRASES = {
     "you",
 }
 
+PRESENTATION_FACTUAL_HEADINGS = {
+    "# Core Themes",
+    "# Products / Features Shown",
+    "# Technical Details",
+    "# Demonstrations / Examples",
+    "# Announcements / Claims",
+}
+
+AMBIGUITY_HEADINGS = {
+    "meeting": "# Ambiguous / Unverified Terms",
+    "presentation": "# Open Questions / Ambiguities",
+}
+
+SPEAKER_MAPPING_RE = re.compile(r"^(\s*-\s*)(.+?)\s+\((SPEAKER_\d+)\)\s*$")
+SPEAKER_ROLE_RE = re.compile(r"^(\s*-\s*)(SPEAKER_\d+)\s+\([^)]+\)\s*$")
+SUSPECT_MM_WAVE_RE = re.compile(r"\b\d+\s*mm\s+wave\b", re.IGNORECASE)
+MIXED_TOKEN_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*\d[A-Za-z0-9_]*\b")
+PAREN_TERM_RE = re.compile(r"\b([A-Z0-9][A-Z0-9_-]{1,})\s+\(([^)]+)\)")
+SUSPICIOUS_EXPANSION_WORDS = {"somber"}
+
 
 def normalize_text(value):
     return re.sub(r"[^a-z0-9 ]+", "", value.lower()).strip()
@@ -263,6 +283,158 @@ def is_low_information_line(line):
         return True
 
     return False
+
+
+def parse_summary_sections(summary):
+    sections = []
+    current_heading = None
+    current_lines = []
+
+    for line in summary.strip().splitlines():
+        if line.startswith("# "):
+            if current_heading is not None:
+                sections.append((current_heading, current_lines))
+            current_heading = line.strip()
+            current_lines = []
+            continue
+        if current_heading is not None:
+            current_lines.append(line)
+
+    if current_heading is not None:
+        sections.append((current_heading, current_lines))
+
+    return sections
+
+
+def render_summary_sections(sections):
+    rendered = []
+
+    for heading, lines in sections:
+        rendered.append(heading)
+        rendered.extend(lines if lines else ["- None stated."])
+        rendered.append("")
+
+    return "\n".join(rendered).strip()
+
+
+def transcript_token_set(transcript_lines):
+    transcript_text = "\n".join(transcript_lines)
+    return {token.lower() for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9+./_-]*", transcript_text)}
+
+
+def strip_chunk_artifacts(line):
+    if re.search(r"\bchunk(?:s)?\b", line, re.IGNORECASE):
+        return None
+    return line
+
+
+def sanitize_people_line(line):
+    match = SPEAKER_MAPPING_RE.match(line)
+    if match:
+        prefix, name, _speaker = match.groups()
+        return f"{prefix}{name}"
+
+    match = SPEAKER_ROLE_RE.match(line)
+    if match:
+        prefix, speaker = match.groups()
+        return f"{prefix}{speaker}"
+
+    return line
+
+
+def strip_unsupported_parenthetical_expansions(line, transcript_text_lower):
+    def replace(match):
+        term, expansion = match.groups()
+        expansion_words = {
+            word.lower()
+            for word in re.findall(r"[A-Za-z][A-Za-z-]*", expansion)
+        }
+        if expansion_words & SUSPICIOUS_EXPANSION_WORDS:
+            return term
+        if expansion.lower() in transcript_text_lower:
+            return match.group(0)
+        return term
+
+    return PAREN_TERM_RE.sub(replace, line)
+
+
+def extract_ambiguous_notes(line, transcript_tokens):
+    notes = []
+
+    mm_wave = SUSPECT_MM_WAVE_RE.search(line)
+    if mm_wave:
+        notes.append(f"- {mm_wave.group(0)} (possible transcription issue)")
+
+    for token in MIXED_TOKEN_RE.findall(line):
+        if token.isdigit():
+            continue
+        if token.lower() not in transcript_tokens:
+            notes.append(f"- {token} (term not clearly grounded in transcript text)")
+
+    return notes
+
+
+def dedupe_preserve_order(lines):
+    seen = set()
+    result = []
+
+    for line in lines:
+        key = line.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(line)
+
+    return result
+
+
+def sanitize_summary_output(summary, template_name, transcript_lines):
+    sections = parse_summary_sections(summary)
+    if not sections:
+        return summary
+
+    ambiguity_heading = AMBIGUITY_HEADINGS[template_name]
+    transcript_text_lower = "\n".join(transcript_lines).lower()
+    transcript_tokens = transcript_token_set(transcript_lines)
+    ambiguity_notes = []
+    sanitized_sections = []
+
+    for heading, lines in sections:
+        cleaned_lines = []
+
+        for raw_line in lines:
+            line = strip_chunk_artifacts(raw_line)
+            if line is None:
+                continue
+
+            if heading == "# People Mentioned":
+                line = sanitize_people_line(line)
+
+            if template_name == "presentation" and heading in PRESENTATION_FACTUAL_HEADINGS:
+                line = strip_unsupported_parenthetical_expansions(line, transcript_text_lower)
+                ambiguous = extract_ambiguous_notes(line, transcript_tokens)
+                if ambiguous:
+                    ambiguity_notes.extend(ambiguous)
+                    continue
+
+            cleaned_lines.append(line)
+
+        cleaned_lines = [line for line in cleaned_lines if line.strip()]
+        if not cleaned_lines:
+            cleaned_lines = ["- None stated."]
+
+        sanitized_sections.append((heading, cleaned_lines))
+
+    if ambiguity_notes:
+        ambiguity_notes = dedupe_preserve_order(ambiguity_notes)
+        for index, (heading, lines) in enumerate(sanitized_sections):
+            if heading != ambiguity_heading:
+                continue
+            retained_lines = [line for line in lines if line.strip() != "- None stated."]
+            sanitized_sections[index] = (heading, dedupe_preserve_order(retained_lines + ambiguity_notes))
+            break
+
+    return render_summary_sections(sanitized_sections)
 
 
 def detect_summary_format(transcript_lines, transcript_path=None):
@@ -430,6 +602,8 @@ Content rules:
 {chr(10).join(template["content_rules"])}
 - Never mention chunk numbers, chunk boundaries, or intermediate processing in the final output.
 - In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not include tool names, product names, or inferred identities.
+- Do not pair a person's name with a speaker label unless the transcript explicitly identifies that mapping.
+- If a technical term looks unclear, malformed, or possibly mis-transcribed, keep it out of factual sections and place it in the ambiguity section instead.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
@@ -467,6 +641,8 @@ Output rules:
 - Do not guess meanings or relationships.
 - For `# People Mentioned`, include only actual people explicitly named or speaker labels from this chunk.
 - Do not mention chunk numbers or chunk boundaries inside the section content.
+- Do not pair a person's name with a speaker label unless the chunk explicitly identifies that mapping.
+- If a technical term looks unclear, malformed, or possibly mis-transcribed, keep it out of factual sections and place it in the ambiguity section instead.
 {chr(10).join(template["content_rules"])}
 
 Domain glossary:
@@ -503,6 +679,8 @@ Output rules:
 - For `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities from speaker labels and do not include tools or products.
 - For `# Ambiguous / Unverified Terms`, prefer raw transcript terms over guessed expansions unless the Domain glossary explicitly defines them.
 - When uncertain whether something is a decision or action item, omit it or place it under `# Open Questions` or `# Main Topics Discussed`.
+- Do not pair a person's name with a speaker label unless the transcript explicitly identifies that mapping.
+- If a technical term looks unclear, malformed, or possibly mis-transcribed, keep it out of factual sections and place it in the ambiguity section instead.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
@@ -577,6 +755,8 @@ Do not convert proposals or suggestions into decisions.
 Do not convert implications into action items or next steps.
 In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities and do not include tools or products.
 In `# Ambiguous / Unverified Terms`, keep raw terms unless the Domain glossary explicitly defines the meaning.
+Do not pair a person's name with a speaker label unless the transcript explicitly identifies that mapping.
+If a technical term looks unclear, malformed, or possibly mis-transcribed, keep it out of factual sections and place it in the ambiguity section instead.
 Use these exact headings in this exact order:
 {headings}
 
@@ -605,6 +785,8 @@ Do not convert proposals or suggestions into decisions.
 Do not invent action items or next steps that are not explicit in the chunk notes.
 In `# People Mentioned`, include only actual people explicitly named or speaker labels. Do not infer identities and do not include tools or products.
 In `# Ambiguous / Unverified Terms`, keep raw terms unless the Domain glossary explicitly defines the meaning.
+Do not pair a person's name with a speaker label unless the transcript explicitly identifies that mapping.
+If a technical term looks unclear, malformed, or possibly mis-transcribed, keep it out of factual sections and place it in the ambiguity section instead.
 Use these exact headings in this exact order:
 {chr(10).join(template_headings(template_name))}
 
@@ -671,22 +853,22 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
 
     errors = validate_summary(summary, template_name)
     if not errors:
-        return summary, template_name, detected
+        return sanitize_summary_output(summary, template_name, transcript_lines), template_name, detected
 
     repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
     if not repaired_errors:
-        return repaired_summary, template_name, detected
+        return sanitize_summary_output(repaired_summary, template_name, transcript_lines), template_name, detected
 
     if chunk_notes is None:
         print("[summary] Falling back to chunked summarization...", flush=True)
         summary, chunk_notes = generate_chunked_summary(transcript, backend, template_name)
         errors = validate_summary(summary, template_name)
         if not errors:
-            return summary, template_name, detected
+            return sanitize_summary_output(summary, template_name, transcript_lines), template_name, detected
 
         repaired_summary, repaired_errors = try_repair_summary(summary, errors, backend, template_name)
         if not repaired_errors:
-            return repaired_summary, template_name, detected
+            return sanitize_summary_output(repaired_summary, template_name, transcript_lines), template_name, detected
 
     print("[summary] Rebuilding final summary from chunk notes...", flush=True)
     recovered_summary = generate_text(
@@ -699,7 +881,7 @@ def generate_summary_markdown(transcript, backend, summary_format, transcript_li
         joined_errors = "; ".join(recovery_errors)
         raise ValueError(f"Summary validation failed after recovery: {joined_errors}")
 
-    return recovered_summary, template_name, detected
+    return sanitize_summary_output(recovered_summary, template_name, transcript_lines), template_name, detected
 
 
 def parse_args():
