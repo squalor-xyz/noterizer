@@ -142,6 +142,9 @@ Content rules:
 - Do not infer relationships, ownership, intent, company names, or acronym expansions unless explicitly stated.
 - Do not use generic summary phrases like "the discussion revolves around", "moving forward", or "in summary".
 - Do not add narrative filler, conclusions, or assistant-style language.
+- Do not upgrade suggestions, proposals, or ideas into decisions or commitments.
+- Do not invent action items or next steps that were not explicitly assigned, requested, or agreed.
+- Never mention chunk numbers, chunk boundaries, or intermediate processing in the final output.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
@@ -159,14 +162,14 @@ Section requirements:
 - `# Architecture / System Ideas`: system structure, boundaries, integrations, data flow.
 - `# Business / Product Details`: only if actually discussed.
 - `# Constraints / Risks / Concerns`: include technical and process risks.
-- `# Action Items`: include owner and due date only if stated.
-- `# Decisions Made`: explicit decisions only.
+- `# Action Items`: include only explicit tasks, requests, or follow-ups. If no clear task exists, write `- None stated.`
+- `# Decisions Made`: explicit decisions only. Do not include proposals, open ideas, or "should" statements.
 - `# Open Questions`: unresolved questions only.
 - `# Ambiguous / Unverified Terms`: unclear terms, possible transcription errors, unexpanded acronyms.
 - `# People Mentioned`: names or speaker references only if useful.
 - `# Chronological Timeline`: short timeline bullets with timestamps when useful.
 - `# Important Quotes`: only unusually precise or important statements.
-- `# Next Steps`: explicit next steps only.
+- `# Next Steps`: explicit next steps only. Do not infer likely next steps from discussion context.
 
 Required headings:
 {chr(10).join(REQUIRED_HEADINGS)}
@@ -190,6 +193,10 @@ Output rules:
 - If a section has nothing useful, write `- None stated.`
 - Preserve exact facts, names, acronyms, values, timestamps, workflows, constraints, and quotes from this chunk only.
 - Do not guess meanings or relationships.
+- For `# Action Items`, include only explicit tasks, requests, or follow-ups from this chunk.
+- For `# Decisions Made`, include only explicit decisions from this chunk.
+- For `# Next Steps`, include only explicit next steps from this chunk.
+- Do not mention chunk numbers or chunk boundaries inside the section content.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
@@ -218,6 +225,12 @@ Output rules:
 - If a section has nothing useful, write `- None stated.`
 - Do not add any intro or outro text.
 - Preserve concrete details from the chunk notes. Do not invent facts that are not present in the notes.
+- Never mention chunk numbers, chunk ranges, or phrases like "in chunk 3" in the final summary.
+- Remove any intermediate-processing references from the final output.
+- For `# Decisions Made`, keep only explicit decisions. Drop proposals, ideas, or suggestions.
+- For `# Action Items`, keep only explicit tasks, requests, or follow-ups.
+- For `# Next Steps`, keep only explicit next steps. Do not infer likely future work.
+- When uncertain whether something is a decision or action item, omit it or place it under `# Open Questions` or `# Main Topics Discussed`.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
@@ -272,6 +285,9 @@ Return Markdown only.
 Do not add any intro or outro text.
 Start with `# Executive Summary`.
 Use bullets in every section.
+Remove any references to chunk numbers, chunk boundaries, or intermediate processing.
+Do not convert proposals or suggestions into decisions.
+Do not convert implications into action items or next steps.
 Use these exact headings in this exact order:
 {headings}
 
@@ -295,6 +311,9 @@ Return Markdown only.
 Do not add any intro or outro text.
 Start with `# Executive Summary`.
 Use bullets in every section.
+Never mention chunk numbers, chunk boundaries, or intermediate processing in the final output.
+Do not convert proposals or suggestions into decisions.
+Do not invent action items or next steps that are not explicit in the chunk notes.
 Use these exact headings in this exact order:
 {chr(10).join(REQUIRED_HEADINGS)}
 
