@@ -76,12 +76,7 @@ def build_command(audio_path, output_dir, output_type):
             if i + 1 >= len(tokens):
                 raise ValueError("whisper-cmd.txt has --hf_token without a value.")
 
-            token_value = os.path.expandvars(tokens[i + 1])
-
-            # If HF_TOKEN is not set, rely on an existing Hugging Face login.
-            if "$" not in token_value:
-                command.extend([token, token_value])
-
+            # Prefer an existing Hugging Face CLI login instead of echoing tokens in commands.
             i += 2
             continue
 
