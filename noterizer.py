@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import glob
 import sys
 from pathlib import Path
 
@@ -38,7 +39,11 @@ def parse_args():
         "audio",
         help="Transcribe audio, summarize it, and optionally index transcript and summary data.",
     )
-    audio_parser.add_argument("audio_file", help="Path to the audio file.")
+    audio_parser.add_argument(
+        "audio_files",
+        nargs="+",
+        help="One or more audio file paths or glob patterns.",
+    )
     audio_parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
     audio_parser.add_argument("--transcripts-dir", help="Directory for WhisperX outputs.")
     audio_parser.add_argument("--summaries-dir", help="Directory for markdown summaries.")
@@ -53,6 +58,14 @@ def parse_args():
         choices=["none", "transcript", "summary", "both"],
         default=None,
         help="What to index after processing. Defaults to the active profile.",
+    )
+    audio_parser.add_argument(
+        "--overwrite",
+        choices=["none", "transcript", "summary", "both"],
+        nargs="?",
+        const="both",
+        default="none",
+        help="Overwrite existing outputs. Transcript overwrite also regenerates the summary.",
     )
     audio_parser.add_argument("--db-path", help="Override the database path.")
 
@@ -157,8 +170,29 @@ Indexed excerpts:
     return 0
 
 
-def run_audio_pipeline(args, profile):
-    audio_path = Path(args.audio_file).expanduser().resolve()
+def expand_audio_inputs(audio_inputs):
+    audio_paths = []
+    seen = set()
+
+    for value in audio_inputs:
+        matches = glob.glob(str(Path(value).expanduser()))
+        resolved_matches = (
+            [Path(match).resolve() for match in matches]
+            if matches
+            else [Path(value).expanduser().resolve()]
+        )
+
+        for path in resolved_matches:
+            path_key = str(path)
+            if path_key in seen:
+                continue
+            seen.add(path_key)
+            audio_paths.append(path)
+
+    return audio_paths
+
+
+def run_audio_file(args, profile, audio_path):
     ensure_exists(audio_path, "Audio file")
 
     transcript_output = args.transcript_output or profile["audio"]["transcript_output"]
@@ -174,14 +208,26 @@ def run_audio_pipeline(args, profile):
         else default_child_dir(audio_path, profile["audio"]["summaries_dirname"])
     )
 
-    command = build_command(audio_path, transcripts_dir, transcript_output)
-    run_command(command)
-
     transcript_path = transcript_json_path(audio_path, transcripts_dir)
-    ensure_exists(transcript_path, "Transcript JSON")
-
     summary_path = summary_markdown_path(audio_path, summaries_dir)
-    write_summary(transcript_path, summary_path, profile)
+    overwrite_transcript = args.overwrite in {"transcript", "both"}
+    overwrite_summary = args.overwrite in {"summary", "both"} or overwrite_transcript
+
+    if transcript_path.exists() and not overwrite_transcript:
+        print(f"[audio] Reusing transcript {transcript_path}", flush=True)
+    else:
+        if transcript_path.exists() and overwrite_transcript:
+            print(f"[audio] Overwriting transcript {transcript_path}", flush=True)
+        command = build_command(audio_path, transcripts_dir, transcript_output)
+        run_command(command)
+        ensure_exists(transcript_path, "Transcript JSON")
+
+    if summary_path.exists() and not overwrite_summary:
+        print(f"[audio] Reusing summary {summary_path}", flush=True)
+    else:
+        if summary_path.exists() and overwrite_summary:
+            print(f"[audio] Overwriting summary {summary_path}", flush=True)
+        write_summary(transcript_path, summary_path, profile)
 
     if index_mode == "none":
         return 0
@@ -198,6 +244,23 @@ def run_audio_pipeline(args, profile):
         index_markdown_file(collection, summary_path, "summary", profile["embedding_backend"])
 
     return 0
+
+
+def run_audio_pipeline(args, profile):
+    audio_paths = expand_audio_inputs(args.audio_files)
+    exit_code = 0
+
+    for index, audio_path in enumerate(audio_paths, start=1):
+        if len(audio_paths) > 1:
+            print(f"[audio] File {index}/{len(audio_paths)}: {audio_path}", flush=True)
+
+        try:
+            run_audio_file(args, profile, audio_path)
+        except (FileNotFoundError, RuntimeError, ValueError, requests.RequestException) as exc:
+            print(f"Error processing {audio_path}: {exc}", file=sys.stderr)
+            exit_code = 1
+
+    return exit_code
 
 
 def run_image_pipeline(args, profile):
