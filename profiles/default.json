@@ -1,0 +1,31 @@
+{
+  "summary_backend": {
+    "kind": "ollama_generate",
+    "url": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:14b",
+    "options": {
+      "temperature": 0.1
+    }
+  },
+  "query_backend": {
+    "kind": "ollama_generate",
+    "url": "http://localhost:11434/api/generate",
+    "model": "qwen2.5:14b",
+    "options": {
+      "temperature": 0.1
+    }
+  },
+  "embedding_backend": {
+    "kind": "ollama_embeddings",
+    "url": "http://localhost:11434/api/embeddings",
+    "model": "nomic-embed-text"
+  },
+  "vision_backend": {
+    "kind": "ollama_chat",
+    "url": "http://localhost:11434/api/chat",
+    "model": "minicpm-v",
+    "options": {
+      "temperature": 0.0
+    }
+  }
+}

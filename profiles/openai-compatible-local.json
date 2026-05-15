@@ -1,0 +1,31 @@
+{
+  "summary_backend": {
+    "kind": "openai_chat_completions",
+    "url": "http://localhost:8000/v1/chat/completions",
+    "model": "your-chat-model",
+    "options": {
+      "temperature": 0.1
+    }
+  },
+  "query_backend": {
+    "kind": "openai_chat_completions",
+    "url": "http://localhost:8000/v1/chat/completions",
+    "model": "your-chat-model",
+    "options": {
+      "temperature": 0.1
+    }
+  },
+  "embedding_backend": {
+    "kind": "openai_embeddings",
+    "url": "http://localhost:8000/v1/embeddings",
+    "model": "your-embedding-model"
+  },
+  "vision_backend": {
+    "kind": "openai_chat_completions_vision",
+    "url": "http://localhost:8000/v1/chat/completions",
+    "model": "your-vision-model",
+    "options": {
+      "temperature": 0.0
+    }
+  }
+}

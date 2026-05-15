@@ -1,82 +1,55 @@
 #!/usr/bin/env python3
-import base64
-import sys
+import argparse
 from pathlib import Path
 
 import requests
 
-
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "minicpm-v"
-
-PROMPT = """
-Perform OCR extraction on this handwritten note.
-
-Rules:
-- Extract text as literally as possible.
-- Preserve line breaks and structure.
-- Do NOT summarize.
-- Do NOT interpret.
-- Do NOT rewrite.
-- Do NOT infer missing words.
-- If text is unclear, write [unclear].
-- Preserve technical terms exactly.
-- Preserve arrows, bullets, indentation, and labels.
-- Output Markdown only.
-""".strip()
+from noterizer_core import default_child_dir, ensure_dir, extract_note, load_profile, note_markdown_path
 
 
-def encode_image(path):
-    return base64.b64encode(Path(path).read_bytes()).decode("utf-8")
-
-
-def extract_note(image_path):
-    image_b64 = encode_image(image_path)
-
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": MODEL,
-            "stream": False,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": PROMPT,
-                    "images": [image_b64],
-                }
-            ],
-            "options": {
-                "temperature": 0.0,
-            },
-        },
-        timeout=600,
-    )
-
-    response.raise_for_status()
-    return response.json()["message"]["content"].strip()
+def parse_args():
+    parser = argparse.ArgumentParser(description="OCR an image into markdown.")
+    parser.add_argument("image_file", help="Path to the image file.")
+    parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
+    parser.add_argument("--output", help="Output markdown path.")
+    parser.add_argument("--notes-dir", help="Directory for generated notes.")
+    return parser.parse_args()
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python image_to_note.py notes.jpg")
-        sys.exit(1)
-
-    image_path = Path(sys.argv[1])
+    args = parse_args()
+    image_path = Path(args.image_file).expanduser().resolve()
 
     if not image_path.exists():
         print(f"File not found: {image_path}")
-        sys.exit(1)
+        return 1
+
+    profile = load_profile(args.profile)
 
     print(f"[1/2] Processing image: {image_path}", flush=True)
 
-    note = extract_note(image_path)
+    try:
+        note = extract_note(image_path, profile["vision_backend"])
+    except requests.RequestException as exc:
+        print(f"Error: {exc}")
+        return 1
 
-    out_path = image_path.with_suffix(".note.md")
+    if args.output:
+        out_path = Path(args.output).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    elif args.notes_dir:
+        notes_dir = ensure_dir(Path(args.notes_dir).expanduser().resolve())
+        out_path = note_markdown_path(image_path, notes_dir)
+    else:
+        notes_dir = ensure_dir(default_child_dir(image_path, profile["image"]["notes_dirname"]))
+        out_path = note_markdown_path(image_path, notes_dir)
+
     out_path.write_text(note + "\n")
 
     print(f"[2/2] Wrote {out_path}", flush=True)
     print(note)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

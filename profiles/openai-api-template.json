@@ -1,0 +1,35 @@
+{
+  "summary_backend": {
+    "kind": "openai_chat_completions",
+    "url": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENAI_API_KEY",
+    "options": {
+      "temperature": 0.1
+    }
+  },
+  "query_backend": {
+    "kind": "openai_chat_completions",
+    "url": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENAI_API_KEY",
+    "options": {
+      "temperature": 0.1
+    }
+  },
+  "embedding_backend": {
+    "kind": "openai_embeddings",
+    "url": "https://api.openai.com/v1/embeddings",
+    "model": "text-embedding-3-small",
+    "api_key_env": "OPENAI_API_KEY"
+  },
+  "vision_backend": {
+    "kind": "openai_chat_completions_vision",
+    "url": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENAI_API_KEY",
+    "options": {
+      "temperature": 0.0
+    }
+  }
+}

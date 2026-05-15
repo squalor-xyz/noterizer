@@ -1,53 +1,43 @@
-import json
+#!/usr/bin/env python3
+import argparse
 import sys
-import uuid
-import requests
-import chromadb
 from pathlib import Path
 
-DB_PATH = "./voice_db"
-COLLECTION = "memory"
-EMBED_MODEL = "nomic-embed-text"
+import requests
 
-client = chromadb.PersistentClient(path=DB_PATH)
-collection = client.get_or_create_collection(COLLECTION)
+from noterizer_core import get_collection, index_transcript_file, load_profile, resolve_db_path
 
-def embed(text):
-    r = requests.post(
-        "http://localhost:11434/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": text}
-    )
-    r.raise_for_status()
-    return r.json()["embedding"]
 
-path = Path(sys.argv[1])
-data = json.loads(path.read_text())
+def parse_args():
+    parser = argparse.ArgumentParser(description="Index a transcript JSON file into the shared database.")
+    parser.add_argument("transcript_json", help="Path to the transcript JSON file.")
+    parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
+    parser.add_argument("--db-path", help="Override the database path.")
+    return parser.parse_args()
 
-count = 0
 
-for seg in data.get("segments", []):
-    text = seg.get("text", "").strip()
-    if not text:
-        continue
+def main():
+    args = parse_args()
+    transcript_path = Path(args.transcript_json).expanduser().resolve()
 
-    speaker = seg.get("speaker", "UNKNOWN")
-    start = float(seg.get("start", 0))
-    end = float(seg.get("end", 0))
+    if not transcript_path.exists():
+        print(f"Error: file not found: {transcript_path}")
+        return 1
 
-    doc = f"{speaker} [{start:.1f}-{end:.1f}]: {text}"
+    try:
+        profile = load_profile(args.profile)
+        collection = get_collection(
+            resolve_db_path(profile, args.db_path),
+            profile["database"]["collection"],
+        )
+        count = index_transcript_file(collection, transcript_path, profile["embedding_backend"])
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        print(f"Error: {exc}")
+        return 1
 
-    collection.add(
-        ids=[str(uuid.uuid4())],
-        documents=[doc],
-        embeddings=[embed(doc)],
-        metadatas=[{
-            "source": path.name,
-            "speaker": speaker,
-            "start": start,
-            "end": end
-        }]
-    )
+    print(f"Indexed {count} transcript chunks into {resolve_db_path(profile, args.db_path)}")
+    return 0
 
-    count += 1
 
-print(f"Indexed {count} transcript chunks into {DB_PATH}")
+if __name__ == "__main__":
+    raise SystemExit(main())

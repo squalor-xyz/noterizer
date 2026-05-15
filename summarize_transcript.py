@@ -1,14 +1,13 @@
+#!/usr/bin/env python3
+import argparse
 import json
 import sys
-import time
-import requests
 from pathlib import Path
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "qwen2.5:14b"
+import requests
 
-TEMPERATURE = 0.1
-PROGRESS_INTERVAL_SECONDS = 2
+from noterizer_core import generate_text, load_profile
+
 
 DOMAIN_GLOSSARY = """
 Known terminology:
@@ -33,59 +32,9 @@ def load_transcript(path):
     return "\n".join(lines)
 
 
-def ask_ollama(prompt):
-    print("[1/4] Sending prompt to Ollama...", flush=True)
-
-    response = requests.post(
-        OLLAMA_URL,
-        json={
-            "model": MODEL,
-            "prompt": prompt,
-            "stream": True,
-            "options": {
-                "temperature": TEMPERATURE
-            }
-        },
-        stream=True,
-        timeout=600
-    )
-
-    response.raise_for_status()
-
-    print("[2/4] Generating notes...", flush=True)
-
-    chunks = []
-    approx_words = 0
-    last_update = time.time()
-
-    for line in response.iter_lines():
-        if not line:
-            continue
-
-        data = json.loads(line.decode("utf-8"))
-
-        chunk = data.get("response", "")
-
-        if chunk:
-            chunks.append(chunk)
-            approx_words += len(chunk.split())
-
-        now = time.time()
-
-        if now - last_update >= PROGRESS_INTERVAL_SECONDS:
-            print(f"[progress] ~{approx_words} words generated...", flush=True)
-            last_update = now
-
-        if data.get("done"):
-            print("[3/4] Generation complete.", flush=True)
-            break
-
-    return "".join(chunks).strip()
-
-
 def build_prompt(transcript):
     return f"""
-You are generating permanent private reference notes from a transcript.
+You are generating durable reference notes from a transcript.
 
 Your job is information preservation and extraction, NOT executive storytelling.
 
@@ -220,41 +169,52 @@ Transcript:
 """.strip()
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python summarize_transcript.py transcripts/input.json")
-        sys.exit(1)
+def parse_args():
+    parser = argparse.ArgumentParser(description="Summarize a WhisperX transcript JSON file.")
+    parser.add_argument("transcript_json", help="Path to the transcript JSON file.")
+    parser.add_argument("--profile", default="default", help="Profile name or path to JSON.")
+    parser.add_argument("--output", help="Output markdown path. Defaults beside the transcript JSON.")
+    return parser.parse_args()
 
-    transcript_path = Path(sys.argv[1])
+
+def main():
+    args = parse_args()
+    transcript_path = Path(args.transcript_json).expanduser().resolve()
 
     if not transcript_path.exists():
         print(f"Error: file not found: {transcript_path}")
-        sys.exit(1)
+        return 1
+
+    profile = load_profile(args.profile)
 
     print("[0/4] Loading transcript...", flush=True)
-
     transcript = load_transcript(transcript_path)
 
     if not transcript.strip():
         print("Error: transcript contains no usable text.")
-        sys.exit(1)
+        return 1
 
     print(f"[0/4] Loaded transcript chars: {len(transcript):,}", flush=True)
-
     prompt = build_prompt(transcript)
-
     print(f"[0/4] Prompt chars: {len(prompt):,}", flush=True)
+    print("[1/4] Generating summary...", flush=True)
 
-    summary = ask_ollama(prompt)
+    try:
+        summary = generate_text(prompt, profile["summary_backend"])
+    except requests.RequestException as exc:
+        print(f"Error: {exc}")
+        return 1
 
-    out_path = transcript_path.with_suffix(".summary.md")
-
-    print(f"[4/4] Writing notes to {out_path}", flush=True)
-
+    out_path = (
+        Path(args.output).expanduser().resolve()
+        if args.output
+        else transcript_path.with_suffix(".summary.md")
+    )
     out_path.write_text(summary + "\n")
-
+    print(f"[4/4] Writing notes to {out_path}", flush=True)
     print("[done]", flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

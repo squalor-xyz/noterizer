@@ -1,0 +1,11 @@
+{
+  "summary_backend": {
+    "model": "qwen2.5:7b"
+  },
+  "query_backend": {
+    "model": "qwen2.5:7b"
+  },
+  "vision_backend": {
+    "model": "llava"
+  }
+}
