@@ -34,134 +34,68 @@ def load_transcript(path):
 
 def build_prompt(transcript):
     return f"""
-You are generating durable reference notes from a transcript.
+Generate durable reference notes from this transcript.
 
-Your job is information preservation and extraction, NOT executive storytelling.
+Primary goal: preserve concrete information. Do not turn the conversation into polished prose.
 
-Write dense, factual, technically precise notes.
+Output rules:
+- Output Markdown only.
+- Start with the heading `# Executive Summary`.
+- Use bullets, not paragraphs, in every section.
+- Use the exact section headings listed below, in the same order.
+- If a section has nothing useful, write `- None stated.` and move on.
+- Do not write any intro or outro text before or after the sections.
+
+Content rules:
+- Preserve exact facts over interpretation.
+- Preserve product names, tool names, system names, acronyms, file/database/table names, numeric values, workflows, constraints, risks, and tradeoffs.
+- Keep timestamps when they help.
+- If a statement is ambiguous, mark it as uncertain instead of guessing.
+- Do not infer relationships, ownership, intent, company names, or acronym expansions unless explicitly stated.
+- Do not use generic summary phrases like "the discussion revolves around", "moving forward", or "in summary".
+- Do not add narrative filler, conclusions, or assistant-style language.
 
 Domain glossary:
 {DOMAIN_GLOSSARY}
 
-Glossary rules:
+Terminology rules:
 - If the transcript uses a term from the glossary, use the glossary meaning.
-- If a term is not in the glossary and is not explicitly expanded in the transcript, do not expand it.
-- Do not guess acronym meanings.
+- Otherwise, do not expand acronyms unless the transcript explicitly expands them.
+- If a term may be mis-transcribed or unclear, list it under `# Ambiguous / Unverified Terms`.
 
-Entity rules:
-- Do NOT identify a person, company, product, team, or organization unless the transcript explicitly identifies it as such.
-- Do NOT say "John's company", "Sean's company", or similar unless the transcript explicitly says that.
-- Do NOT say an acronym is a company, product, or organization unless explicitly stated.
-- If a relationship is unclear, write "relationship unclear" or "not specified".
-- Preserve the wording from the transcript rather than assigning entity types.
+Section requirements:
+- `# Executive Summary`: 3-5 bullets max.
+- `# Key Facts`: concrete facts only.
+- `# Main Topics Discussed`: specific topics, not generic labels.
+- `# Technical Details`: exact implementation and workflow details.
+- `# Architecture / System Ideas`: system structure, boundaries, integrations, data flow.
+- `# Business / Product Details`: only if actually discussed.
+- `# Constraints / Risks / Concerns`: include technical and process risks.
+- `# Action Items`: include owner and due date only if stated.
+- `# Decisions Made`: explicit decisions only.
+- `# Open Questions`: unresolved questions only.
+- `# Ambiguous / Unverified Terms`: unclear terms, possible transcription errors, unexpanded acronyms.
+- `# People Mentioned`: names or speaker references only if useful.
+- `# Chronological Timeline`: short timeline bullets with timestamps when useful.
+- `# Important Quotes`: only unusually precise or important statements.
+- `# Next Steps`: explicit next steps only.
 
-Critical rules:
-- Preserve concrete details from the transcript.
-- Prefer exact facts over polished summaries.
-- Preserve implementation details, architecture ideas, constraints, commands, parameters, filenames, APIs, tooling, company names, timelines, technical tradeoffs, and reasoning.
-- Do NOT generalize specific technical discussions into vague business language.
-- Do NOT rewrite the conversation into a polished narrative.
-- Do NOT add conversational filler.
-- Do NOT add conclusions, encouragement, pleasantries, or assistant-style statements.
-- Do NOT include greetings, closings, offers, apologies, or phrases like "let me know", "if you need", "I can", "happy to help", or "feel free".
-- Do NOT infer emotions, motivations, agreement, excitement, or business intent unless explicitly stated.
-- Do NOT invent details.
-- Do NOT add advice unless the transcript itself includes it.
-- Do NOT optimize for readability over information retention.
-- If information is ambiguous, state the ambiguity.
-- If a section has no relevant information, write "Not mentioned."
-- Keep speaker labels and timestamps when they help preserve context.
-- Use concise Markdown.
-- Never convert a technical term into a company or organization.
-- Never assign ownership, employer, customer, or role relationships unless explicitly stated.
-
-Acronym and terminology rules:
-- Do NOT expand acronyms unless the transcript explicitly expands them or the term is in the Domain glossary.
-- Do NOT guess what abbreviations mean.
-- Preserve acronyms exactly as spoken or transcribed.
-- If an acronym or term may be ambiguous, list it under "# Ambiguous / Unverified Terms".
-- Example: if the transcript says "FEM", write "FEM / Front End Module" because FEM is defined in the Domain glossary.
-- If the transcript appears to contain a transcription error, mark it as uncertain instead of correcting it silently.
-
-Technical preservation rules:
-- Capture specific product/system names.
-- Capture workflow details.
-- Capture software architecture ideas.
-- Capture deployment ideas.
-- Capture data privacy/security concerns.
-- Capture customer/user segmentation.
-- Capture business model details only when tied to the technical plan.
-- Capture integration points, data systems, databases, networks, hardware/software interfaces, and multi-tenant/separate-instance discussions.
-- Preserve exact terms even if they seem domain-specific or unclear.
-
-Avoid generic phrases such as:
-- "the discussion revolves around"
-- "both expressed interest"
-- "challenging yet rewarding"
-- "moving forward"
-- "mutual appreciation"
-- "current context and background"
-- "closing thoughts"
-- "ends on a positive note"
-- "look forward to future discussions"
-
-Output EXACTLY these sections:
-
+Required headings:
 # Executive Summary
-
-Keep this short: 3-5 bullets maximum. No narrative wrap-up.
-
 # Key Facts
-
-Concrete facts only. Use bullets.
-
 # Main Topics Discussed
-
-Use bullets. Avoid generic labels.
-
 # Technical Details
-
-Preserve exact technologies, systems, acronyms, settings, filenames, tools, model names, parameters, errors, constraints, implementation details, system architecture details, troubleshooting notes, numeric values, and tradeoffs when present.
-
-Do not expand acronyms unless explicitly expanded in the transcript or defined in the Domain glossary.
-
 # Architecture / System Ideas
-
-Include platform structure, deployment model, data separation, instances, networking, databases, integrations, and system boundaries if discussed.
-
 # Business / Product Details
-
-Only include business model, customer, pricing, market, or sales details if actually discussed.
-
 # Constraints / Risks / Concerns
-
-Include privacy, security, sales, time, technical feasibility, customer adoption, data separation, or implementation risks if discussed.
-
 # Action Items
-
-Include owner, task, and due date if stated.
-
 # Decisions Made
-
 # Open Questions
-
 # Ambiguous / Unverified Terms
-
-List acronyms, unclear words, possible transcription errors, or terms that should not be guessed.
-
 # People Mentioned
-
 # Chronological Timeline
-
-Use timestamps when useful.
-
 # Important Quotes
-
-Only include quotes that are unusually important, precise, or technically meaningful.
-
 # Next Steps
-
-Only include next steps explicitly stated or clearly implied by the transcript.
 
 Transcript:
 
