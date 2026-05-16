@@ -127,6 +127,8 @@ python3 noterizer.py query-list --type summary
 python3 noterizer.py query-list --type summary --date 2026-05-13
 ```
 
+`--source N` uses the numbering from the current filtered source list. Use the same `--type` and `--date` filters for `query-list` and `query` when selecting one source by number.
+
 Use a non-default profile:
 
 ```bash

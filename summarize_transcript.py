@@ -141,6 +141,8 @@ AMBIGUITY_HEADINGS = {
 
 SPEAKER_MAPPING_RE = re.compile(r"^(\s*-\s*)(.+?)\s+\((SPEAKER_\d+)\)\s*$")
 SPEAKER_ROLE_RE = re.compile(r"^(\s*-\s*)(SPEAKER_\d+)\s+\([^)]+\)\s*$")
+SPEAKER_ONLY_RE = re.compile(r"^SPEAKER_\d+$")
+PERSON_NAME_RE = re.compile(r"^[A-Z][A-Za-z]+(?:[ -][A-Z][A-Za-z]+)*$")
 SUSPECT_MM_WAVE_RE = re.compile(r"\b\d+\s*mm\s+wave\b", re.IGNORECASE)
 MIXED_TOKEN_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*\d[A-Za-z0-9_]*\b")
 PAREN_TERM_RE = re.compile(r"\b([A-Z0-9][A-Z0-9_-]{1,})\s+\(([^)]+)\)")
@@ -176,6 +178,12 @@ HARD_ACTION_RE = re.compile(
     r"\b(i(?:'m| am)? going to|i owe you|we need to|we will|let'?s|can you|"
     r"will work on|will review|will walk through|create an issue|formal request)\b",
     re.IGNORECASE,
+)
+MEETING_FILENAME_HINT_RE = re.compile(
+    r"(?:^|[_-])(mtg|meeting|review|sync|standup|retro|issues|discussion|call|customer|samples)(?:[_-]|$)"
+)
+PRESENTATION_FILENAME_HINT_RE = re.compile(
+    r"(?:^|[_-])(keynote|presentation|webinar|conference|summit|plenary|talk)(?:[_-]|$)"
 )
 
 
@@ -372,13 +380,48 @@ def sanitize_people_line(line):
         prefix, speaker = match.groups()
         return f"{prefix}{speaker}"
 
-    return line
+    if not line.strip().startswith("- "):
+        return None
+
+    body = line.strip()[2:].strip()
+    if not body:
+        return None
+
+    body = body.split(" (", 1)[0].strip()
+    body = re.sub(r"\s*\([^)]*$", "", body).strip()
+    body = re.sub(r"\s{2,}", " ", body)
+
+    lowered = body.lower()
+    if any(
+        marker in lowered
+        for marker in (
+            "presumably",
+            "speaker label",
+            "not explicitly",
+            "ai system",
+            "tool",
+            "product",
+            "not named",
+        )
+    ):
+        return None
+
+    if SPEAKER_ONLY_RE.fullmatch(body):
+        return f"- {body}"
+
+    if PERSON_NAME_RE.fullmatch(body):
+        return f"- {body}"
+
+    return None
 
 
 def split_people_line(line):
+    if line is None:
+        return []
+
     stripped = line.strip()
     if not stripped.startswith("- "):
-        return [line]
+        return []
 
     body = stripped[2:]
     parts = [part.strip() for part in body.split(",")]
@@ -480,7 +523,7 @@ def sanitize_summary_output(summary, template_name, transcript_lines):
 
             cleaned_lines.append(line)
 
-        cleaned_lines = [line for line in cleaned_lines if line.strip()]
+        cleaned_lines = dedupe_preserve_order([line for line in cleaned_lines if line.strip()])
         if not cleaned_lines:
             cleaned_lines = ["- None stated."]
 
@@ -552,27 +595,38 @@ def detect_summary_format(transcript_lines, transcript_path=None):
     if transcript_path is not None:
         path_text = str(Path(transcript_path).stem).lower()
 
-    hint_terms = ("keynote", "presentation", "demo", "session", "webinar", "conference", "ni-connect")
-    if any(term in path_text for term in hint_terms):
+    if MEETING_FILENAME_HINT_RE.search(path_text):
+        return "meeting"
+
+    if PRESENTATION_FILENAME_HINT_RE.search(path_text):
         return "presentation"
 
     speakers = [extract_line_speaker(line) for line in transcript_lines if extract_line_speaker(line) != "UNKNOWN"]
     unique_speakers = set(speakers)
     speaker_switches = sum(1 for left, right in zip(speakers, speakers[1:]) if left != right)
+    dominant_speaker_ratio = 0.0
+    if speakers:
+        dominant_speaker_ratio = max(speakers.count(speaker) for speaker in unique_speakers) / len(speakers)
 
     transcript_text = " ".join(extract_line_text(line).lower() for line in transcript_lines[:120])
     presentation_markers = sum(
         marker in transcript_text
         for marker in (
+            "today we're",
+            "today i",
             "today",
             "demo",
             "let me show",
+            "i'll show",
+            "we'll show",
             "on stage",
             "thank you all",
+            "thanks for joining",
             "joining us",
             "welcome",
-            "session",
             "keynote",
+            "roadmap",
+            "announcing",
         )
     )
     meeting_markers = sum(
@@ -586,13 +640,27 @@ def detect_summary_format(transcript_lines, transcript_path=None):
             "action item",
             "issue",
             "requirements",
+            "can you",
+            "could you",
+            "i'll",
+            "i will",
+            "let's",
+            "we should",
+            "review",
+            "question",
         )
     )
+    question_marks = transcript_text.count("?")
 
-    if len(unique_speakers) <= 2 and speaker_switches <= max(4, len(speakers) // 10):
-        return "presentation"
+    if meeting_markers >= 2 or question_marks >= 3:
+        return "meeting"
 
-    if presentation_markers >= 2 and meeting_markers == 0:
+    if (
+        presentation_markers >= 3
+        and meeting_markers == 0
+        and dominant_speaker_ratio >= 0.65
+        and speaker_switches <= max(8, len(speakers) // 8)
+    ):
         return "presentation"
 
     return "meeting"

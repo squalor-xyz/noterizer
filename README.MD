@@ -81,6 +81,8 @@ python3 noterizer.py query-list --type summary --date 2026-05-13
 python3 noterizer.py query --type summary --source 2 "What were the main topics?"
 ```
 
+`--source N` uses the numbering from the current filtered source list. In practice, run `query-list` with the same `--type` and `--date` filters first, then use that numbered result with `query`.
+
 Filter query to summaries only:
 
 ```bash
@@ -168,7 +170,9 @@ noterizer/
 ├── whisper-cmd.txt
 ├── README.MD
 └── docs/
+    ├── releases/
     ├── profiles.md
+    ├── roadmap.md
     ├── setup.md
     └── usage.md
 ```

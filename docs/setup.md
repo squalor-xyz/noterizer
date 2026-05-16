@@ -115,11 +115,12 @@ ollama pull llama3.2-vision
 
 If you are using an OpenAI-compatible local server or hosted API instead, configure the relevant profile and ensure those models are available on that backend.
 
-For a first successful run, you only need the default-profile models:
+For a first successful audio run, you only need:
 
 - `qwen2.5:14b`
 - `nomic-embed-text`
-- `minicpm-v`
+
+You only need `minicpm-v` if you plan to use the image OCR pipeline.
 
 ## 5. Hugging Face Setup for Diarization
 
@@ -241,6 +242,19 @@ If that works, then test retrieval:
 python3 noterizer.py query "What was discussed?"
 ```
 
+Once you have many indexed files, list sources before narrowing a query:
+
+```bash
+python3 noterizer.py query-list --type summary
+python3 noterizer.py query-list --type summary --date 2026-05-13
+```
+
+Then query one listed source by number using the same filters:
+
+```bash
+python3 noterizer.py query --type summary --date 2026-05-13 --source 2 "What were the main topics?"
+```
+
 ## 8. Minimal Verification Checklist
 
 Use these checks in order if you are unsure what is broken.
@@ -274,6 +288,7 @@ Query path:
 
 ```bash
 python3 noterizer.py query "What happened?"
+python3 noterizer.py query-list --type summary
 ```
 
 ## 9. Recommended Hardware
