@@ -51,6 +51,8 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Recommended Python for this stack is `3.12`. The WhisperX / faster-whisper / ctranslate2 dependency chain is not currently supported on Python `3.14`.
+
 Audio:
 
 ```bash
@@ -212,3 +214,4 @@ Use `--log-level INFO` when you want more detail in that file, including per-ste
 - Domain-specific technical vocabulary can still be mis-transcribed by WhisperX and then misinterpreted by the summary model.
 - Conference/keynote-style recordings with uncommon RF or engineering terminology are currently the highest-risk case.
 - The OpenAI-compatible profile paths are bundled but were not validated end to end for this release; Ollama is the tested backend path for `v0.1.0`.
+- Python `3.14` is not currently a supported runtime for the WhisperX stack used here; use Python `3.12`.

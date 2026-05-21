@@ -19,11 +19,28 @@ If you are brand new to this stack, the shortest path is:
 
 You do not need to understand every component before the first run.
 
-Recommended:
+Recommended Python:
+
+- Python `3.12`
+- Do not use Python `3.14` for this stack right now; WhisperX currently depends on packages that do not resolve cleanly there
+
+Recommended virtual environment creation:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
+```
+
+If your distro does not provide `python3.12` directly, use `pyenv` to install it and then create the virtual environment from that interpreter.
+
+Example on newer Ubuntu releases:
+
+```bash
+sudo apt install pyenv
+pyenv install 3.12.10
+pyenv shell 3.12.10
+python -m venv ~/venvs/noterizer
+source ~/venvs/noterizer/bin/activate
 ```
 
 Install Python dependencies:
@@ -49,6 +66,8 @@ System tools you will usually need:
 - NVIDIA CUDA drivers if you want GPU WhisperX
 
 If `ffmpeg` is missing, install it with your OS package manager before continuing.
+
+If dependency installation fails on Python `3.14`, stop and rebuild the environment on Python `3.12` rather than trying to force newer wheels into working.
 
 ## 2. Choose a Backend Style
 

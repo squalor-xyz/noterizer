@@ -2,6 +2,8 @@
 
 ## Audio Pipeline
 
+Use this CLI from a Python `3.12` environment. The WhisperX dependency stack used by Noterizer is not currently supported on Python `3.14`.
+
 Default behavior:
 
 - transcribe with WhisperX

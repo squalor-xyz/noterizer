@@ -26,3 +26,4 @@ First public release.
 - Summary quality is improved, but important outputs should still be skim-reviewed
 - Long/noisy recordings and domain-specific technical vocabulary remain the main summary-quality limitations
 - OpenAI-compatible profile configurations are included, but `v0.1.0` release testing covered the Ollama path only
+- Python `3.12` is the recommended runtime; Python `3.14` is not currently supported for the WhisperX dependency stack
