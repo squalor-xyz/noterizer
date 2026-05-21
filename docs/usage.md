@@ -22,6 +22,8 @@ python3 noterizer.py audio /path/to/input.mp3 --profile ollama-light
 python3 noterizer.py audio /path/to/input.mp3 --profile openai-compatible-local
 ```
 
+The OpenAI-compatible profiles are available, but `v0.1.0` was validated with Ollama-based profiles rather than an end-to-end OpenAI-compatible run.
+
 Summary format selection defaults to the active profile. The bundled default uses `auto`, which tries to detect whether a transcript is closer to a meeting or a presentation/keynote.
 
 Override it explicitly when needed:

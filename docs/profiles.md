@@ -38,12 +38,14 @@ python3 noterizer.py profiles
 - local server exposing OpenAI-style endpoints
 - example URLs use `http://localhost:8000/v1/...`
 - update the model names to match your server
+- included as a profile example; not exercised end to end in `v0.1.0` release testing
 
 `openai-api-template`
 
 - hosted OpenAI-compatible API example
 - uses `OPENAI_API_KEY`
 - intended as a starting point for a copied local profile
+- included as a profile example; not exercised end to end in `v0.1.0` release testing
 
 ## Supported Backend Kinds
 
@@ -134,5 +136,7 @@ Export it before use:
 ```bash
 export OPENAI_API_KEY=...
 ```
+
+The OpenAI-compatible paths use plain HTTP requests to compatible `/v1/*` endpoints. No separate OpenAI Python SDK is required by this repo today.
 
 Do not commit private profile files with secrets. The repo ignores `profiles/*.local.json`.

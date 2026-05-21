@@ -58,6 +58,8 @@ This repo can work with:
 - local OpenAI-compatible servers such as vLLM, LocalAI, or LM Studio
 - hosted OpenAI-compatible APIs
 
+For `v0.1.0`, the tested path is local Ollama. The bundled OpenAI-compatible profiles are included as examples and starting points, but were not validated end to end in release testing.
+
 See [profiles.md](./profiles.md) for profile details.
 
 If you do not want to make backend decisions yet, use the bundled `default` profile first.
@@ -114,6 +116,8 @@ ollama pull llama3.2-vision
 ```
 
 If you are using an OpenAI-compatible local server or hosted API instead, configure the relevant profile and ensure those models are available on that backend.
+
+No separate OpenAI Python SDK is required for those profiles; the current connector path uses `requests` against OpenAI-compatible HTTP endpoints.
 
 For a first successful audio run, you only need:
 
@@ -449,6 +453,18 @@ What helps:
 - keep a cleaner edited sibling `.srt` when possible
 - use human skim review for important outputs
 - treat unusual technical terms in summaries as suspect unless they match known vocabulary
+
+### OpenAI-compatible profile path has not been release-tested
+
+Symptoms:
+
+- local Ollama profiles work, but you are unsure whether `openai-compatible-local` or `openai-api-template` is production-ready for this release
+
+Current status:
+
+- those profile shapes are supported in code
+- they were not exercised end to end during `v0.1.0` release validation
+- the tested setup for this release is Ollama-based
 
 ### Transcript seems noisy after the real content ended
 

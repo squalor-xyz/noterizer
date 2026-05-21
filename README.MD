@@ -108,6 +108,8 @@ Bundled profiles include:
 - `openai-compatible-local`: local server exposing OpenAI-style `/v1/*` endpoints
 - `openai-api-template`: template for hosted OpenAI-compatible APIs using `OPENAI_API_KEY`
 
+The bundled OpenAI-compatible profile examples are included as configuration starting points, but they were not exercised end to end for `v0.1.0`. This release was tested with Ollama-based profiles.
+
 Use a profile by name:
 
 ```bash
@@ -209,3 +211,4 @@ Use `--log-level INFO` when you want more detail in that file, including per-ste
 - Long or noisy recordings can degrade summary quality, especially when the recording continues after the real meeting or talk has ended.
 - Domain-specific technical vocabulary can still be mis-transcribed by WhisperX and then misinterpreted by the summary model.
 - Conference/keynote-style recordings with uncommon RF or engineering terminology are currently the highest-risk case.
+- The OpenAI-compatible profile paths are bundled but were not validated end to end for this release; Ollama is the tested backend path for `v0.1.0`.
